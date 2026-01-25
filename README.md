@@ -25,3 +25,10 @@ eXoWin9x=!win9x
 <img width="428" height="172" alt="02" src="https://github.com/user-attachments/assets/391d6e36-89d6-425d-9a3c-bc98fe1eee12" />
 
 ------------------------------------------------------------------------------------------------------
+
+
+No installation required, just move the application to your LaunchBox folder.
+
+If there is no image for the game, you can give it a different name from the images folder.
+
+------------------------------------------------------------------------------------------------------
