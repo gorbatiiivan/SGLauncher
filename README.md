@@ -27,7 +27,7 @@ eXoWin9x=!win9x
 ------------------------------------------------------------------------------------------------------
 
 
-No installation required, just move the application to your LaunchBox folder.
+No installation required, just move the SGLauncher folder to your LaunchBox folder.
 
 If there is no image for the game, you can give it a different name from the images folder.
 
