@@ -2,7 +2,8 @@
 Portable launcher for eXo collections.
 
 
-<img width="1920" height="1032" alt="01" src="https://github.com/user-attachments/assets/2a7d0c94-d017-4c7e-b465-29c9eab573c4" />
+<img width="1920" height="1032" alt="Screenshot 2026-02-08 153931" src="https://github.com/user-attachments/assets/77aec4a6-db92-4ab2-9a56-798553d417ee" />
+
 
 
 Tested with eXoDos, eXoWin3x, eXoWin9x.
