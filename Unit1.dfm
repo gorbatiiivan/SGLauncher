@@ -61,9 +61,9 @@ object MainForm: TMainForm
         TabOrder = 0
         object ScreenShotImage: TImage
           AlignWithMargins = True
-          Left = 55
+          Left = 97
           Top = 3
-          Width = 527
+          Width = 443
           Height = 310
           Margins.Left = 55
           Margins.Right = 55
@@ -78,11 +78,13 @@ object MainForm: TMainForm
           ExplicitHeight = 226
         end
         object NextImgBtn: TSpeedButton
-          Left = 584
-          Top = 152
-          Width = 45
-          Height = 35
+          Left = 595
+          Top = 0
+          Width = 42
+          Height = 316
+          Align = alRight
           Caption = '>'
+          Enabled = False
           Flat = True
           Font.Charset = DEFAULT_CHARSET
           Font.Color = clWindowText
@@ -93,11 +95,13 @@ object MainForm: TMainForm
           OnClick = NextImgBtnClick
         end
         object PrevImgBtn: TSpeedButton
-          Left = 6
-          Top = 152
-          Width = 45
-          Height = 35
+          Left = 0
+          Top = 0
+          Width = 42
+          Height = 316
+          Align = alLeft
           Caption = '<'
+          Enabled = False
           Flat = True
           Font.Charset = DEFAULT_CHARSET
           Font.Color = clWindowText
@@ -342,6 +346,13 @@ object MainForm: TMainForm
       OnClick = Manual1Click
     end
     object N2: TMenuItem
+      Caption = '-'
+    end
+    object DesktopShortcut1: TMenuItem
+      Caption = 'Create desktop shortcut'
+      OnClick = DesktopShortcut1Click
+    end
+    object N7: TMenuItem
       Caption = '-'
     end
     object Customimagename1: TMenuItem

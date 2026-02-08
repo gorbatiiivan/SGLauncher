@@ -10,7 +10,7 @@ uses
   IniFiles, Vcl.Menus, ShlObj, Vcl.ImgList, StrUtils, System.Generics.Collections;
 
 const
-  sReleaseDate = '08.02.2026';
+  sReleaseDate = '28.01.2026';
 
 type
   TGameData = record
@@ -26,7 +26,6 @@ type
     Manual: string;
     ConfigurationPath: string;
     RootFolder: string;
-    ID: string;
   end;
 
 type
@@ -133,8 +132,7 @@ type
     procedure ApplyFilters;
     procedure AddImagesToList(const ImagesPath: string;
                                     SourcePath: TListView;
-                                    const ForcedBaseName: string = '';
-                                    const ID: string = '');
+                                    const ForcedBaseName: string = '');
     procedure InitializeComboBoxes;
     procedure FinalizeLoading;
     procedure UpdateExtrasMenu(const GameIndex: Integer);
@@ -632,7 +630,7 @@ end;
 
 procedure TMainForm.AddImagesToList(const ImagesPath: string;
   SourcePath: TListView;
-  const ForcedBaseName: string = ''; const ID: string = '');
+  const ForcedBaseName: string = '');
 var
   PlatformDir: string;
   Platform2: string;
@@ -857,53 +855,6 @@ begin
   end;
 
   // ───────────────────────────────────────────────
-  // 3. Если ничего не нашли по имени — ищем по ID (GUID), как нижний приоритет
-  // ───────────────────────────────────────────────
-  if (ImgList.Count = 0) and (ID <> '') then
-   begin
-    BaseNameNoYear := OneLine(ID);
-    BaseNameWithYear := '';
-    BaseNameWithYearNoSpace := '';
-    // Сначала приоритетные папки для GUID
-   for Folder in PriorityFolders do
-     TryAddFromFolder(Folder, 9999);
-   // Если почти ничего не нашли — полный поиск для GUID
-   if ImgList.Count < 2 then
-    begin
-     var AllFiles := TDirectory.GetFiles(PlatformDir, '.*', TSearchOption.soAllDirectories);
-     for FilePath in AllFiles do
-    begin
-     // Пропускаем файлы из уже обработанных приоритетных папок
-     var InPriority := False;
-     for Folder in PriorityFolders do
-    if Pos(IncludeTrailingPathDelimiter(Folder), FilePath) > 0 then
-     begin
-      InPriority := True;
-      Break;
-     end;
-    if InPriority then Continue;
-    FileName := OneLine(TPath.GetFileNameWithoutExtension(FilePath));
-    if ForcedBaseName <> '' then
-     begin
-      if SameText(FileName, ForcedBaseName) or
-      StartsText(ForcedBaseName + '-', FileName) or
-      MatchForcedNumberedName(FileName, ForcedBaseName) then
-      if ImgList.IndexOf(FilePath) = -1 then
-      ImgList.Add(FilePath);
-     end
-    else
-    begin
-     if IsValidMatch(FileName, BaseNameNoYear) or
-        ((BaseNameWithYear <> '') and IsValidMatch(FileName, BaseNameWithYear)) or
-        ((BaseNameWithYearNoSpace <> '') and IsValidMatch(FileName, BaseNameWithYearNoSpace)) then
-     if ImgList.IndexOf(FilePath) = -1 then
-       ImgList.Add(FilePath);
-    end;
-    end;
-    end;
-   end;
-
-  // ───────────────────────────────────────────────
   // Показываем первое изображение, если что-то нашли
   // ───────────────────────────────────────────────
   if ImgList.Count > 0 then
@@ -920,7 +871,6 @@ begin
     PrevImgBtn.Enabled := ImgList.Count > 1;
   end;
 end;
-
 
 procedure TMainForm.InitializeComboBoxes;
 var
@@ -1309,14 +1259,14 @@ begin
     end;
 
   // ===== IMAGES =====
-  if not NConfig.ValueExists(FGameData[RealIndex].Platforms, FGameData[RealIndex].ID) then
+  if not NConfig.ValueExists(FGameData[RealIndex].Platforms, FGameData[RealIndex].GameName) then
    ForceImgName := ''
   else
    ForceImgName := NConfig.ReadString(FGameData[RealIndex].Platforms,
-     FGameData[RealIndex].ID, '');
+     FGameData[RealIndex].GameName, '');
   AddImagesToList(
     LaunchBoxDir + '\Images\' + FGameData[RealIndex].Platforms,
-    ListView1, ForceImgName, FGameData[RealIndex].ID);
+    ListView1, ForceImgName);
 
   // ===== EXTRAS =====
   UpdateExtrasMenu(RealIndex);
@@ -1357,7 +1307,7 @@ begin
         case IndexStr(NodeName, ['Title', 'ApplicationPath', 'Platform',
                                   'Developer', 'Publisher', 'Genre', 'Series',
                                   'ReleaseDate', 'Notes', 'ManualPath',
-                                  'ConfigurationPath', 'RootFolder', 'ID']) of
+                                  'ConfigurationPath', 'RootFolder']) of
           0: G.GameName := Child.Text;
           1: G.ApplicationPath := Child.Text;
           2: G.Platforms := Child.Text;
@@ -1370,7 +1320,6 @@ begin
           9: G.Manual := Child.Text;
           10: G.ConfigurationPath := Child.Text;
           11: G.RootFolder := Child.Text;
-          12: G.ID := Child.Text;
         end;
       end;
 
@@ -1644,7 +1593,7 @@ begin
   TempWIC := TWICImage.Create;
   ImgList := TStringList.Create;
 
-  LaunchBoxDir := 'E:\LaunchBox\LaunchBox.exe'{GetExecPath};
+  LaunchBoxDir := 'E:\LaunchBox'{GetExecPath};
   GetFConfig;
   GetNConfig;
   RegIni(False);
@@ -1733,7 +1682,6 @@ begin
   Item.SubItems.Add(G.Manual);
   Item.SubItems.Add(G.ConfigurationPath);
   Item.SubItems.Add(G.RootFolder);
-  Item.SubItems.Add(G.ID);
 end;
 
 procedure TMainForm.ListView1DblClick(Sender: TObject);
@@ -1961,23 +1909,23 @@ procedure TMainForm.Customimagename1Click(Sender: TObject);
 begin
   with DiagForm do
    begin
-    Caption := ListView1.Selected.Caption;
+    Caption := ListView1.Items[ListView1.ItemIndex].Caption;
     Position := poDesktopCenter;
     ActiveControl := Edit1;
     Label2.Caption := 'Example: Tomb Raider Gold-01.jpg > Tomb Raider Gold';
     Button3.Hint := 'Select an image';
     ifFile := True;
-    Edit1.Text := NConfig.ReadString(ListView1.Selected.SubItems[1],
-      ListView1.Selected.SubItems[11], '');
-    DialogDir := LaunchBoxDir + '\Images\' + ListView1.Selected.SubItems[1];
+    Edit1.Text := NConfig.ReadString(ListView1.Items[ListView1.ItemIndex].SubItems[1],
+      ListView1.Items[ListView1.ItemIndex].Caption, '');
+    DialogDir := LaunchBoxDir + '\Images\' + ListView1.Items[ListView1.ItemIndex].SubItems[1];
      if (Showmodal <> mrCancel) then
       begin
        if Edit1.Text = '' then
-       NConfig.DeleteKey(ListView1.Selected.SubItems[1],
-         ListView1.Selected.SubItems[11])
+       NConfig.DeleteKey(ListView1.Items[ListView1.ItemIndex].SubItems[1],
+         ListView1.Items[ListView1.ItemIndex].Caption)
        else
-       NConfig.WriteString(ListView1.Selected.SubItems[1],
-         ListView1.Selected.SubItems[11], Edit1.Text);
+       NConfig.WriteString(ListView1.Items[ListView1.ItemIndex].SubItems[1],
+         ListView1.Items[ListView1.ItemIndex].Caption, Edit1.Text);
        NConfig.UpdateFile;
       end;
    end;

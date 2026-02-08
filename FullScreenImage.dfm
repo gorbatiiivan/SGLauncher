@@ -13,17 +13,17 @@ object FullScreenForm: TFullScreenForm
   Font.Style = []
   KeyPreview = True
   WindowState = wsMaximized
-  OnKeyUp = FormKeyUp
+  OnKeyDown = FormKeyDown
   OnMouseUp = FormMouseUp
   TextHeight = 15
   object FullScreenImage: TImage
     AlignWithMargins = True
     Left = 50
-    Top = 50
+    Top = 53
     Width = 540
-    Height = 380
+    Height = 377
     Margins.Left = 50
-    Margins.Top = 50
+    Margins.Top = 15
     Margins.Right = 50
     Margins.Bottom = 50
     Align = alClient
@@ -35,5 +35,24 @@ object FullScreenForm: TFullScreenForm
     ExplicitTop = 128
     ExplicitWidth = 504
     ExplicitHeight = 208
+  end
+  object Label1: TLabel
+    AlignWithMargins = True
+    Left = 3
+    Top = 10
+    Width = 634
+    Height = 25
+    Margins.Top = 10
+    Align = alTop
+    Alignment = taCenter
+    Color = clBlack
+    Font.Charset = DEFAULT_CHARSET
+    Font.Color = clWhite
+    Font.Height = -19
+    Font.Name = 'Segoe UI'
+    Font.Style = []
+    ParentColor = False
+    ParentFont = False
+    ExplicitWidth = 5
   end
 end
