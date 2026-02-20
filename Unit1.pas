@@ -7,10 +7,11 @@ uses
   System.IOUtils, Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.ComCtrls,
   Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.Buttons, Vcl.Imaging.jpeg, Vcl.Imaging.pngimage,
   Vcl.Imaging.GIFImg, Xml.XMLIntf, Xml.XMLDoc, Math, ActiveX, ComObj, ShellAPI,
-  IniFiles, Vcl.Menus, ShlObj, Vcl.ImgList, StrUtils, System.Generics.Collections;
+  IniFiles, Vcl.Menus, ShlObj, Vcl.ImgList, StrUtils, System.Generics.Collections,
+  System.ImageList, Vcl.ToolWin, System.TypInfo, Vcl.Themes;
 
 const
-  sReleaseDate = '08.02.2026';
+  sReleaseDate = '20.02.2026';
 
 type
   TGameData = record
@@ -30,7 +31,7 @@ type
   end;
 
 type
-  TMainForm = class(TForm)
+  TSGLMainForm = class(TForm)
     TabControl1: TTabControl;
     Panel1: TPanel;
     Panel2: TPanel;
@@ -75,6 +76,16 @@ type
     N6: TMenuItem;
     N7: TMenuItem;
     DesktopShortcut1: TMenuItem;
+    ToolBar1: TToolBar;
+    ImageList1: TImageList;
+    ShowToolBar: TMenuItem;
+    ToolBarMenu1: TMenuItem;
+    AlignToolBar1: TMenuItem;
+    ToolBarLeft1: TMenuItem;
+    ToolBarBottom1: TMenuItem;
+    ToolBarTop1: TMenuItem;
+    ToolBarRight1: TMenuItem;
+    StyleMenu1: TMenuItem;
     procedure FormResize(Sender: TObject);
     procedure ListView1Data(Sender: TObject; Item: TListItem);
     procedure ListView1SelectItem(Sender: TObject; Item: TListItem; Selected: Boolean);
@@ -103,9 +114,11 @@ type
       Shift: TShiftState);
     procedure About1Click(Sender: TObject);
     procedure DesktopShortcut1Click(Sender: TObject);
+    procedure ToolBar1Click(Sender: TObject);
+    procedure ShowToolBarClick(Sender: TObject);
+    procedure ToolBarTop1Click(Sender: TObject);
   private
     TempWIC: TWICImage;
-    FConfig: TMemIniFile;
     NConfig: TMemIniFile;
     FClosing: Boolean;
     //----------------------
@@ -118,6 +131,7 @@ type
     FSearchText: string;
     ImgCurIndex: Integer;
     ImgList: TStringList;
+    FMsgShow: UINT; // Для Mutex
     // Для поиска
     FTypeBuffer: string;
     FLastTypeTick: Cardinal;
@@ -145,16 +159,20 @@ type
     function GetNConfig: TMemIniFile;
     procedure RegIni(Write: Boolean);
     procedure OnExtrasMenuItemClick(Sender: TObject);
+    procedure StyleMenuClick(Sender: TObject);
     // Для кэша изображдения
     procedure FreeImageCache;
     procedure BuildImageCache; // один раз собираем всё
     procedure RunCacheImages;
     //----------------------
-
+    procedure WMCopyData(var Msg: TWMCopyData); message WM_COPYDATA;
+   public
+    FConfig: TMemIniFile;
+    procedure StrToList(const S, Sign: string; SList: TStrings);
   end;
 
 var
-  MainForm: TMainForm;
+  SGLMainForm: TSGLMainForm;
   LaunchBoxDir: String = '';
   IgnoreDir: String;
   HideInTray: Boolean = False;
@@ -163,7 +181,7 @@ implementation
 
 {$R *.dfm}
 
-uses FullScreenImage, DialogForm, Help;
+uses FullScreenImage, DialogForm, Help, ToolBtnProperties;
 
 //----FUNCTIONS----
 //------------------------------------------------------------------------------
@@ -192,7 +210,7 @@ begin
     mtError, [mbOK], 0);
 end;
 
-procedure StrToList(const S, Sign: string; SList: TStrings);
+procedure TSGLMainForm.StrToList(const S, Sign: string; SList: TStrings);
 var
   CurPos: integer;
   CurStr: string;
@@ -260,7 +278,7 @@ begin
   IgnoredFolders := TStringList.Create;
   try
     IgnoredFolders.CaseSensitive := False;
-    StrToList(IgnoreDir, ';', IgnoredFolders);
+    SGLMainForm.StrToList(IgnoreDir, ';', IgnoredFolders);
 
     for I := 0 to High(Parts) do
     begin
@@ -371,31 +389,59 @@ begin
 end;
 
 function CreateDesktopShellLink(
-  const TargetExePath: string;           // полный путь к .exe
-  const CustomLinkName: string = '';     // желаемое имя без .lnk (если пусто → берётся из TargetExePath)
-  const Description: string = '';         // всплывающая подсказка
-  const Arguments: string = '';           // аргументы командной строки
-  const WorkingDir: string = '';          // рабочая папка (по умолчанию — папка программы)
-  const IconPath: string = '';            // путь к иконке (может быть .exe, .dll, .ico)
-  const IconIndex: Integer = 0            // индекс иконки внутри файла
+  const TargetExePath: string;           // полный путь к .exe / .bat / ...
+  const CustomLinkName: string = '';     // желаемое имя без .lnk
+  const Description: string = '';        // всплывающая подсказка
+  const Arguments: string = '';          // аргументы командной строки
+  const WorkingDir: string = '';         // рабочая папка
+  const IconPath: string = '';           // путь к файлу с иконкой (.exe, .dll, .ico)
+  const IconIndex: Integer = 0           // индекс иконки
 ): Boolean;
-//Функция для создание ярлыка на рабочем столе
+
+ function SanitizeLinkName(const Name: string): string;
+ begin
+  Result := Name;
+
+  // Заменяем проблемные символы, которые ломают ярлыки в Windows
+  Result := StringReplace(Result, ',', ' -', [rfReplaceAll]);
+  Result := StringReplace(Result, ';',  ' -', [rfReplaceAll]);
+  Result := StringReplace(Result, ':',  ' -', [rfReplaceAll]);
+  Result := StringReplace(Result, '/',  '-',  [rfReplaceAll]);
+  Result := StringReplace(Result, '\',  '-',  [rfReplaceAll]);
+  Result := StringReplace(Result, '*',  '',   [rfReplaceAll]);
+  Result := StringReplace(Result, '?',  '',   [rfReplaceAll]);
+  Result := StringReplace(Result, '"',  '''', [rfReplaceAll]);
+  Result := StringReplace(Result, '<',  '',   [rfReplaceAll]);
+  Result := StringReplace(Result, '>',  '',   [rfReplaceAll]);
+  Result := StringReplace(Result, '|',  '-',  [rfReplaceAll]);
+
+  // Убираем множественные пробелы и обрезаем
+  while Pos('  ', Result) > 0 do
+    Result := StringReplace(Result, '  ', ' ', [rfReplaceAll]);
+  Result := Trim(Result);
+
+  // Если после очистки имя стало пустым — ставим заглушку
+  if Result = '' then
+    Result := 'Link';
+ end;
+
 var
   ShellLink   : IShellLink;
   PersistFile : IPersistFile;
   DesktopPIDL : PItemIDList;
   DesktopPath : array[0..MAX_PATH-1] of Char;
-  BaseName    : WideString;
-  LinkName    : WideString;
+  BaseName    : string;
+  LinkName    : string;
   FinalLinkPath : WideString;
   Counter     : Integer;
 begin
   Result := False;
 
-  if not FileExists(TargetExePath) then
+  // Проверяем существование целевого файла
+  if not TFile.Exists(TargetExePath) then
     Exit;
 
-  // Получаем путь к рабочему столу
+  // Получаем путь к рабочему столу текущего пользователя
   if Failed(SHGetSpecialFolderLocation(0, CSIDL_DESKTOP, DesktopPIDL)) then
     Exit;
 
@@ -403,51 +449,58 @@ begin
     if not SHGetPathFromIDList(DesktopPIDL, DesktopPath) then
       Exit;
 
-    // Определяем базовое имя ярлыка (без .lnk)
+    // Определяем базовое имя ярлыка
     if CustomLinkName <> '' then
       BaseName := CustomLinkName
     else
       BaseName := ChangeFileExt(ExtractFileName(TargetExePath), '');
 
-    // Начинаем с оригинального имени
-    LinkName := BaseName + '.lnk';
-    FinalLinkPath := WideString(IncludeTrailingPathDelimiter(DesktopPath)) + LinkName;
+    // Очищаем имя от опасных символов
+    BaseName := SanitizeLinkName(BaseName);
 
-    // Если существует → добавляем (1), (2), ...
+    // Формируем имя файла ярлыка
+    LinkName := BaseName + '.lnk';
+    FinalLinkPath := IncludeTrailingPathDelimiter(DesktopPath) + LinkName;
+
+    // Если такой ярлык уже существует — добавляем (1), (2), ...
     Counter := 1;
-    while FileExists(FinalLinkPath) do
+    while TFile.Exists(FinalLinkPath) do
     begin
       LinkName := BaseName + ' (' + IntToStr(Counter) + ').lnk';
-      FinalLinkPath := WideString(IncludeTrailingPathDelimiter(DesktopPath)) + LinkName;
+      FinalLinkPath := IncludeTrailingPathDelimiter(DesktopPath) + LinkName;
       Inc(Counter);
+      if Counter > 99 then Break; // защита от бесконечного цикла
     end;
 
-    // Создаём COM-объект ярлыка
-    ShellLink := CreateComObject(CLSID_ShellLink) as IShellLink;
+    // Создаём объект ярлыка
+    OleCheck(CoCreateInstance(CLSID_ShellLink, nil, CLSCTX_INPROC_SERVER, IShellLink, ShellLink));
 
-    ShellLink.SetPath(PChar(TargetExePath));
-    ShellLink.SetDescription(PChar(Description));
+    try
+      // Устанавливаем основные свойства
+      OleCheck(ShellLink.SetPath(PChar(TargetExePath)));
 
-    if WorkingDir <> '' then
-      ShellLink.SetWorkingDirectory(PChar(WorkingDir))
-    else
-      ShellLink.SetWorkingDirectory(PChar(ExtractFilePath(TargetExePath)));
+      if Description <> '' then
+        OleCheck(ShellLink.SetDescription(PChar(Description)));
 
-    if Arguments <> '' then
-      ShellLink.SetArguments(PChar(Arguments));
+      if Arguments <> '' then
+        OleCheck(ShellLink.SetArguments(PChar(Arguments)));
 
-    if IconPath <> '' then
-      ShellLink.SetIconLocation(PChar(IconPath), IconIndex);
+      // Рабочая директория
+      if WorkingDir <> '' then
+        OleCheck(ShellLink.SetWorkingDirectory(PChar(WorkingDir)))
+      else
+        OleCheck(ShellLink.SetWorkingDirectory(PChar(ExtractFilePath(TargetExePath))));
 
-    PersistFile := ShellLink as IPersistFile;
+      // Иконка (если указана)
+      if IconPath <> '' then
+        OleCheck(ShellLink.SetIconLocation(PChar(IconPath), IconIndex));
 
-    // Сохраняем
-    Result := Succeeded(
-      PersistFile.Save(
-        PWideChar(FinalLinkPath),
-        False
-      )
-    );
+      // Сохраняем ярлык
+      PersistFile := ShellLink as IPersistFile;
+      Result := Succeeded(PersistFile.Save(PWideChar(FinalLinkPath), False));
+    finally
+      ShellLink := nil;
+    end;
 
   finally
     if Assigned(DesktopPIDL) then
@@ -455,7 +508,7 @@ begin
   end;
 end;
 
-procedure TMainForm.AddGameToArray(const G: TGameData);
+procedure TSGLMainForm.AddGameToArray(const G: TGameData);
 begin
   // Выделяем память блоками по 100 элементов для ускорения
   if FActualGameCount >= Length(FGameData) then
@@ -464,7 +517,7 @@ begin
   Inc(FActualGameCount);
 end;
 
-procedure TMainForm.UpdateExtrasMenu(const GameIndex: Integer);
+procedure TSGLMainForm.UpdateExtrasMenu(const GameIndex: Integer);
 
   // Вспомогательная процедура сортировки
   procedure SortStringArray(var Arr: TStringDynArray);
@@ -609,7 +662,7 @@ begin
   AddFolderToMenu(PopupMenu1.Items, FullExtrasPath);
 end;
 
-procedure TMainForm.ClearGameInfo;
+procedure TSGLMainForm.ClearGameInfo;
 begin
   ListView1.ItemIndex := -1;
   TitleLabel.Caption := '';
@@ -630,7 +683,7 @@ begin
     PopupMenu1.Items.Delete(PopupMenu1.Items.Count - 1);
 end;
 
-procedure TMainForm.AddImagesToList(const ImagesPath: string;
+procedure TSGLMainForm.AddImagesToList(const ImagesPath: string;
   SourcePath: TListView;
   const ForcedBaseName: string = ''; const ID: string = '');
 var
@@ -922,7 +975,7 @@ begin
 end;
 
 
-procedure TMainForm.InitializeComboBoxes;
+procedure TSGLMainForm.InitializeComboBoxes;
 var
   i, j: Integer;
   Items: TStringList;
@@ -993,7 +1046,7 @@ begin
   end;
 end;
 
-procedure TMainForm.FinalizeLoading;
+procedure TSGLMainForm.FinalizeLoading;
 var
   PlatformsDir: string;
   XMLFiles: TStringDynArray;
@@ -1004,7 +1057,7 @@ begin
   if not TDirectory.Exists(PlatformsDir) then
   begin
     TrayIcon.Icon := Application.Icon;
-    MainForm.Icon := Application.Icon;
+    SGLMainForm.Icon := Application.Icon;
     Caption := 'Folder not found';
     TrayIcon.Hint := Caption;
     Exit;
@@ -1016,7 +1069,7 @@ begin
   if Length(XMLFiles) = 0 then
   begin
     TrayIcon.Icon := Application.Icon;
-    MainForm.Icon := Application.Icon;
+    SGLMainForm.Icon := Application.Icon;
     Caption := 'No XML files';
     TrayIcon.Hint := Caption;
     Exit;
@@ -1044,7 +1097,7 @@ begin
         ScrollBox1.Enabled := True;
         NextImgBtn.Enabled := True;
         TrayIcon.Icon := Application.Icon;
-        MainForm.Icon := Application.Icon;
+        SGLMainForm.Icon := Application.Icon;
 
         TThread.Queue(nil,
           procedure
@@ -1056,6 +1109,15 @@ begin
             ListView1.Refresh;
             Caption := 'Total Games: ' + IntToStr(Length(FGameData));
             TrayIcon.Hint := Caption;
+
+            // Выделяем первую игру
+            ActiveControl := ListView1;
+            if ListView1.Items.Count > 0 then
+             begin
+              ListView1.ItemIndex := 0;
+              ListView1.Selected := ListView1.Items[0];
+              ListView1.Selected.MakeVisible(False);
+             end;
           end
         );
       finally
@@ -1068,7 +1130,7 @@ begin
   FLoaderThread.Start;
 end;
 
-procedure TMainForm.ApplyFilters;
+procedure TSGLMainForm.ApplyFilters;
 var
   i, j, Count: Integer;
   Filtered: TArray<Integer>;
@@ -1155,7 +1217,7 @@ begin
   ClearGameInfo;
 end;
 
-procedure TMainForm.SortGameData;
+procedure TSGLMainForm.SortGameData;
 procedure QuickSort(L, R: Integer);
   var
     I, J: Integer;
@@ -1194,7 +1256,7 @@ begin
     QuickSort(0, High(FGameData));
 end;
 
-procedure TMainForm.UpdateGenreSeriesComboForCurrentPlatform;
+procedure TSGLMainForm.UpdateGenreSeriesComboForCurrentPlatform;
 var
   i, j: Integer;
   GenresSeries: TStringList;
@@ -1269,7 +1331,7 @@ begin
   end;
 end;
 
-procedure TMainForm.ShowGameByIndex(const ItemIndex: Integer);
+procedure TSGLMainForm.ShowGameByIndex(const ItemIndex: Integer);
 var
   RealIndex: Integer;
   ForceImgName: String;
@@ -1322,7 +1384,7 @@ begin
   UpdateExtrasMenu(RealIndex);
 end;
 
-procedure TMainForm.LoadXMLToArray(const XMLFileName: string);
+procedure TSGLMainForm.LoadXMLToArray(const XMLFileName: string);
 var
   XML: IXMLDocument;
   Nodes: IXMLNodeList;
@@ -1381,7 +1443,7 @@ begin
   end;
 end;
 
-procedure TMainForm.ScanXMLFromDir(const Dir: string);
+procedure TSGLMainForm.ScanXMLFromDir(const Dir: string);
 var
   Files: TStringDynArray;
   I: Integer;
@@ -1424,7 +1486,7 @@ begin
     FFilteredIndices[I] := I;
 end;
 
-procedure TMainForm.FreeImageCache;
+procedure TSGLMainForm.FreeImageCache;
 var
   sl: TStringList;
 begin
@@ -1437,7 +1499,7 @@ begin
   end;
 end;
 
-procedure TMainForm.BuildImageCache;
+procedure TSGLMainForm.BuildImageCache;
 var
   PlatformsDir, ImagesRoot: string;
   Platforms: TStringDynArray;
@@ -1501,7 +1563,7 @@ begin
   end;
 end;
 
-procedure TMainForm.RunCacheImages;
+procedure TSGLMainForm.RunCacheImages;
 begin
   // Запускаем кэш с небольшой задержкой
   TThread.CreateAnonymousThread(
@@ -1515,7 +1577,7 @@ begin
         if TThread.CheckTerminated or FClosing then Exit;
 
         // Дополнительная защита
-        if not Assigned(MainForm) or (MainForm = nil) then Exit;
+        if not Assigned(SGLMainForm) or (SGLMainForm = nil) then Exit;
 
         FinalizeLoading;
         BuildImageCache;
@@ -1531,9 +1593,177 @@ begin
   ).Start;
 end;
 
+// VCL Styles -----------------------------------------------------------------
+procedure BuildStylesMenu(ARootMenu: TMenuItem; AOnClick: TNotifyEvent);
+//Добавление скинов
+var
+  StyleName: string;
+  Item: TMenuItem;
+begin
+  if ARootMenu = nil then Exit;
+  ARootMenu.Clear;
+
+  // Сначала всегда добавляем Windows (Standard)
+  Item := TMenuItem.Create(ARootMenu);
+  Item.Caption := 'Windows';
+  Item.Tag := -1;
+  Item.OnClick := AOnClick;
+  if SameText('Windows', TStyleManager.ActiveStyle.Name) then
+    Item.Checked := True;
+  ARootMenu.Add(Item);
+
+  ARootMenu.Add(NewLine);
+
+  // Затем все остальные стили (включая возможные другие встроенные, если они есть)
+  for StyleName in TStyleManager.StyleNames do
+  begin
+    if SameText(StyleName, 'Windows') then
+      Continue;
+
+    Item := TMenuItem.Create(ARootMenu);
+    Item.Caption := StyleName;
+    Item.Hint := StyleName;
+    Item.Tag := 0;
+    Item.OnClick := AOnClick;
+    if SameText(StyleName, TStyleManager.ActiveStyle.Name) then
+      Item.Checked := True;
+    ARootMenu.Add(Item);
+  end;
+end;
+
+procedure TSGLMainForm.StyleMenuClick(Sender: TObject);
+//Нажатие на меню для скинов
+var
+  I: Integer;
+  Root: TMenuItem;
+  CurrentStyleName: string;
+begin
+  if not (Sender is TMenuItem) then Exit;
+
+  Root := TMenuItem(Sender).Parent;
+
+  // Снимаем все галочки
+  for I := 0 to Root.Count - 1 do
+    Root.Items[I].Checked := False;
+
+  TMenuItem(Sender).Checked := True;
+
+  // Применяем выбранный стиль
+  if TMenuItem(Sender).Tag = -1 then
+    TStyleManager.SetStyle('Windows')
+  else
+    TStyleManager.TrySetStyle(TMenuItem(Sender).Hint);
+
+  CurrentStyleName := TStyleManager.ActiveStyle.Name;
+
+  FConfig.WriteString('SGAllSettings', 'Styles', CurrentStyleName);
+  FConfig.UpdateFile;
+end;
+
+procedure StylesLoad();
+var
+  SavedStyle: string;
+  ActiveStyleName: string;
+  i: Integer;
+begin
+ with SGLMainForm do
+ begin
+  // Загружаем сохранённый стиль
+  SavedStyle := FConfig.ReadString('SGAllSettings', 'Styles', 'Windows');
+
+  // Проверка если есть такой стиль
+  if (SavedStyle <> '') and (TStyleManager.Style[SavedStyle] = nil) then
+      SavedStyle := 'Windows';
+
+  // Пытаемся применить стиль
+  if not TStyleManager.TrySetStyle(SavedStyle, False) then
+   begin
+     TStyleManager.SetStyle('Windows');
+     SavedStyle := 'Windows';
+   end;
+
+  // Берём **реальное** имя стиля, которое применилось
+  ActiveStyleName := TStyleManager.ActiveStyle.Name;
+
+  // Снимаем все галочки
+  for i := 0 to StyleMenu1.Count - 1 do
+    StyleMenu1.Items[i].Checked := False;
+
+  // Ставим галочку по реальному имени
+  for i := 0 to StyleMenu1.Count - 1 do
+    begin
+      if SameText(StyleMenu1.Items[i].Hint, ActiveStyleName) then
+      begin
+        StyleMenu1.Items[i].Checked := True;
+        Exit;  // нашли → выходим
+      end;
+    end;
+
+  // Если ничего не нашли по Hint → ищем "Windows" по Tag
+  if SameText(ActiveStyleName, 'Windows') then
+    for i := 0 to StyleMenu1.Count - 1 do
+     if StyleMenu1.Items[i].Tag = -1 then
+      begin
+       StyleMenu1.Items[i].Checked := True;
+       Break;
+      end;
+ end;
+end;
+//-----------------------------------------------------------------------------
+
+procedure UpdateToolbarMenuChecks;
+// Checked in INI ToolBar align for menu
+var
+  I: Integer;
+  Root: TMenuItem;
+  AlignName: string;
+begin
+ with SGLMainForm do
+ begin
+  // родительский пункт меню (где 4 позиции)
+  Root := ToolBarTop1.Parent;
+
+  AlignName :=
+    GetEnumName(TypeInfo(TAlign), Ord(ToolBar1.Align));
+
+  for I := 0 to Root.Count - 1 do
+  begin
+    Root.Items[I].Checked :=
+      SameText(Root.Items[I].Hint, AlignName);
+  end;
+ end;
+end;
+
+procedure TSGLMainForm.WMCopyData(var Msg: TWMCopyData);
+//Нужно для показа формы если нажать на exe снова
+begin
+  // если скрыта
+  if not IsWindowVisible(Handle) then
+    Show;
+
+  // если свернута
+  if IsIconic(Handle) then
+    ShowWindow(Handle, SW_RESTORE);
+
+  ShowWindow(Handle, SW_SHOW);
+
+  // Обход Windows focus protection
+  SetWindowPos(Handle, HWND_TOPMOST, 0,0,0,0,
+    SWP_NOMOVE or SWP_NOSIZE);
+
+  SetWindowPos(Handle, HWND_NOTOPMOST, 0,0,0,0,
+    SWP_NOMOVE or SWP_NOSIZE);
+
+  SetForegroundWindow(Handle);
+  BringWindowToTop(Handle);
+  SetActiveWindow(Handle);
+
+  Msg.Result := 1;
+end;
+
 //----CONFIG----
 //------------------------------------------------------------------------------
-function TMainForm.GetFConfig: TMemIniFile;
+function TSGLMainForm.GetFConfig: TMemIniFile;
 var
  AppName: String;
 begin
@@ -1544,7 +1774,7 @@ begin
   Result := FConfig;
 end;
 
-function TMainForm.GetNConfig: TMemIniFile;
+function TSGLMainForm.GetNConfig: TMemIniFile;
 var
  AppName: String;
 begin
@@ -1555,7 +1785,9 @@ begin
   Result := NConfig;
 end;
 
-procedure TMainForm.RegIni(Write: Boolean);
+procedure TSGLMainForm.RegIni(Write: Boolean);
+var
+ s: String;
 begin
 if Write = true then
  begin
@@ -1574,6 +1806,9 @@ if Write = true then
      FConfig.WriteString('SGAllSettings', 'IgnoreDir', '');
   FConfig.WriteInteger('SGAllSettings', 'ListViewWidth', Panel3.Width);
   FConfig.WriteInteger('SGAllSettings', 'InfoPanelHeight', ScrollBox1.Height);
+  FConfig.WriteBool('SGAllSettings', 'ShowToolBar', ToolBar1.Visible);
+  FConfig.WriteString('SGAllSettings', 'ToolBarPosition', GetEnumName(TypeInfo(TAlign), Ord(ToolBar1.Align)));
+  FConfig.WriteString('SGAllSettings', 'Styles', TStyleManager.ActiveStyle.Name);
   FConfig.UpdateFile;
  end else
  begin
@@ -1592,14 +1827,28 @@ if Write = true then
   Hideonstartup1.Checked := FConfig.ReadBool('SGAllSettings', 'HideInTray', False);
   if FConfig.ReadBool('SGAllSettings', 'HideInTray', False) then
   Show1.Caption := 'Show' else Show1.Caption := 'Hide';
-  Panel3.Width := FConfig.ReadInteger('SGAllSettings', 'ListViewWidth', MainForm.Width div 3);
+  Panel3.Width := FConfig.ReadInteger('SGAllSettings', 'ListViewWidth', SGLMainForm.Width div 3);
   ScrollBox1.Height := FConfig.ReadInteger('SGAllSettings', 'InfoPanelHeight', ScrollBox1.Height);
+  if FConfig.ReadBool('SGAllSettings', 'ShowToolBar', False) then
+   begin
+    ToolBar1.Visible := True;
+    ShowToolBar.Checked := True;
+   end else
+   begin
+    ToolBar1.Visible := False;
+    ShowToolBar.Checked := False;
+   end;
+  //ToolBar
+  s := FConfig.ReadString('SGAllSettings', 'ToolBarPosition', 'alTop');
+  ToolBar1.Align := TAlign(GetEnumValue(TypeInfo(TAlign), s));
+  UpdateToolbarMenuChecks;
+  //---------------------------------------------------------------------------
  end;
 end;
 
 //----FORM----
 //------------------------------------------------------------------------------
-procedure TMainForm.FormCloseQuery(Sender: TObject; var CanClose: Boolean);
+procedure TSGLMainForm.FormCloseQuery(Sender: TObject; var CanClose: Boolean);
 const
   THREAD_TIMEOUT_MS = 5000;  // 5 секунд — достаточно для загрузки XML
 var
@@ -1639,25 +1888,38 @@ begin
   if Assigned(NConfig) then FreeAndNil(NConfig);
 end;
 
-procedure TMainForm.FormCreate(Sender: TObject);
+procedure TSGLMainForm.FormCreate(Sender: TObject);
 begin
+  FMsgShow := RegisterWindowMessage('StartGameLauncher_ShowMessage_Unique_String'); //Для Mutex
+
   TempWIC := TWICImage.Create;
   ImgList := TStringList.Create;
 
-  LaunchBoxDir := 'E:\LaunchBox\LaunchBox.exe'{GetExecPath};
+  LaunchBoxDir := 'E:\LaunchBox'{GetExecPath};
   GetFConfig;
   GetNConfig;
   RegIni(False);
 
-  MainForm.Icon := LoadIconFromRCDATA('OnLoadIcon');
+  SGLMainForm.Icon := LoadIconFromRCDATA('OnLoadIcon');
   TrayIcon.Icon := LoadIconFromRCDATA('OnLoadIcon');
   TrayIcon.Visible := True;
   Application.ShowMainForm := not FConfig.ReadBool('SGAllSettings', 'HideInTray', False);
 
+  //ToolBar
+  with ToolBtnPropertiesForm do
+   begin
+    LoadToolButtons(ToolBar1, FConfig, ImageList1, ToolBar1Click);
+    AddItemToButtonPopup(ToolBar1, FConfig, Self, ToolBarMenuClick);
+   end;
+
+  //Создание список стиль
+  BuildStylesMenu(StyleMenu1, StyleMenuClick);
+  StylesLoad();
+
   RunCacheImages;
 end;
 
-procedure TMainForm.FormKeyDown(Sender: TObject; var Key: Word;
+procedure TSGLMainForm.FormKeyDown(Sender: TObject; var Key: Word;
   Shift: TShiftState);
 begin
  if Key = ORD(VK_F1) then About1Click(Sender);
@@ -1683,7 +1945,7 @@ begin
    end;
 end;
 
-procedure TMainForm.FormResize(Sender: TObject);
+procedure TSGLMainForm.FormResize(Sender: TObject);
 begin
   ListView1.Column[0].Width := ListView1.Width - 20;
   Edit1.Width := Panel4.Width div 2 - 6;
@@ -1695,7 +1957,7 @@ end;
 //----FORM COMPONENTS----
 //------------------------------------------------------------------------------
 
-procedure TMainForm.ListView1ContextPopup(Sender: TObject; MousePos: TPoint;
+procedure TSGLMainForm.ListView1ContextPopup(Sender: TObject; MousePos: TPoint;
   var Handled: Boolean);
 var
   Item: TListItem;
@@ -1707,7 +1969,7 @@ begin
     Handled := False; // Показывать меню на элементе
 end;
 
-procedure TMainForm.ListView1Data(Sender: TObject; Item: TListItem);
+procedure TSGLMainForm.ListView1Data(Sender: TObject; Item: TListItem);
 var
   G: TGameData;
   RealIndex: Integer;
@@ -1736,13 +1998,13 @@ begin
   Item.SubItems.Add(G.ID);
 end;
 
-procedure TMainForm.ListView1DblClick(Sender: TObject);
+procedure TSGLMainForm.ListView1DblClick(Sender: TObject);
 begin
  if ListView1.ItemIndex = -1 then Exit;
   ShellOpen(LaunchBoxDir + '\' + ListView1.Selected.SubItems[0]);
 end;
 
-procedure TMainForm.ListView1KeyDown(Sender: TObject; var Key: Word;
+procedure TSGLMainForm.ListView1KeyDown(Sender: TObject; var Key: Word;
   Shift: TShiftState);
 begin
 if Key = ORD(VK_RETURN) then ListView1DblClick(Sender);
@@ -1750,7 +2012,7 @@ if Key = ORD(VK_LEFT) then PrevImgBtnClick(Sender);
 if Key = ORD(VK_RIGHT) then NextImgBtnClick(Sender);
 end;
 
-procedure TMainForm.ListView1KeyPress(Sender: TObject; var Key: Char);
+procedure TSGLMainForm.ListView1KeyPress(Sender: TObject; var Key: Char);
 const
   TYPE_TIMEOUT = 800; // мс
 var
@@ -1792,13 +2054,13 @@ begin
   Delete(FTypeBuffer, Length(FTypeBuffer), 1);
 end;
 
-procedure TMainForm.ListView1SelectItem(Sender: TObject; Item: TListItem; Selected: Boolean);
+procedure TSGLMainForm.ListView1SelectItem(Sender: TObject; Item: TListItem; Selected: Boolean);
 begin
  if Selected then
   ShowGameByIndex(Item.Index) else ClearGameInfo;
 end;
 
-procedure TMainForm.TabControl1Change(Sender: TObject);
+procedure TSGLMainForm.TabControl1Change(Sender: TObject);
 begin
   if not FLoadingComplete then Exit;
 
@@ -1821,7 +2083,7 @@ begin
   end;
 end;
 
-procedure TMainForm.TrayIconClick(Sender: TObject);
+procedure TSGLMainForm.TrayIconClick(Sender: TObject);
 begin
 if Visible then
   begin
@@ -1837,7 +2099,7 @@ if Visible then
   end;
 end;
 
-procedure TMainForm.ScreenShotImageClick(Sender: TObject);
+procedure TSGLMainForm.ScreenShotImageClick(Sender: TObject);
 begin
 if ListView1.ItemIndex = -1 then Exit;
 with FullScreenForm do
@@ -1849,18 +2111,18 @@ with FullScreenForm do
  end;
 end;
 
-procedure TMainForm.ComboBox1Change(Sender: TObject);
+procedure TSGLMainForm.ComboBox1Change(Sender: TObject);
 begin
   ApplyFilters;
 end;
 
-procedure TMainForm.Edit1Change(Sender: TObject);
+procedure TSGLMainForm.Edit1Change(Sender: TObject);
 begin
   FSearchText := Edit1.Text;
   ApplyFilters;
 end;
 
-procedure TMainForm.Hideonstartup1Click(Sender: TObject);
+procedure TSGLMainForm.Hideonstartup1Click(Sender: TObject);
 begin
   with Sender as TMenuItem do
    begin
@@ -1870,7 +2132,18 @@ begin
    end;
 end;
 
-procedure TMainForm.Specifyfolder1Click(Sender: TObject);
+procedure TSGLMainForm.ShowToolBarClick(Sender: TObject);
+begin
+with Sender as TMenuItem do
+   begin
+    Checked := not Checked;
+    ToolBar1.Visible := Checked;
+    FConfig.WriteBool('SGAllSettings', 'ShowToolBar', Checked);
+    FConfig.UpdateFile;
+   end;
+end;
+
+procedure TSGLMainForm.Specifyfolder1Click(Sender: TObject);
 begin
   with DiagForm do
    begin
@@ -1890,7 +2163,7 @@ begin
    end;
 end;
 
-procedure TMainForm.About1Click(Sender: TObject);
+procedure TSGLMainForm.About1Click(Sender: TObject);
 begin
 with HelpForm do
    begin
@@ -1901,12 +2174,12 @@ with HelpForm do
    end;
 end;
 
-procedure TMainForm.Exit1Click(Sender: TObject);
+procedure TSGLMainForm.Exit1Click(Sender: TObject);
 begin
   Close;
 end;
 
-procedure TMainForm.OnExtrasMenuItemClick(Sender: TObject);
+procedure TSGLMainForm.OnExtrasMenuItemClick(Sender: TObject);
 var
   MenuItem: TMenuItem;
   FullPath: string;
@@ -1928,12 +2201,12 @@ begin
   end;
 end;
 
-procedure TMainForm.Run1Click(Sender: TObject);
+procedure TSGLMainForm.Run1Click(Sender: TObject);
 begin
   ListView1DblClick(Sender);
 end;
 
-procedure TMainForm.Configuration1Click(Sender: TObject);
+procedure TSGLMainForm.Configuration1Click(Sender: TObject);
 var
   PathGame: String;
 begin
@@ -1945,7 +2218,7 @@ begin
   end;
 end;
 
-procedure TMainForm.Manual1Click(Sender: TObject);
+procedure TSGLMainForm.Manual1Click(Sender: TObject);
 var
   PathGame: String;
 begin
@@ -1957,7 +2230,7 @@ begin
   end;
 end;
 
-procedure TMainForm.Customimagename1Click(Sender: TObject);
+procedure TSGLMainForm.Customimagename1Click(Sender: TObject);
 begin
   with DiagForm do
    begin
@@ -1983,13 +2256,13 @@ begin
    end;
 end;
 
-procedure TMainForm.DesktopShortcut1Click(Sender: TObject);
+procedure TSGLMainForm.DesktopShortcut1Click(Sender: TObject);
 begin
   CreateDesktopShellLink(LaunchBoxDir +'\'+ ListView1.Selected.SubItems[0],
     ListView1.Selected.Caption);
 end;
 
-procedure TMainForm.PrevImgBtnClick(Sender: TObject);
+procedure TSGLMainForm.PrevImgBtnClick(Sender: TObject);
 begin
   if ImgList.Count = 0 then Exit;
 
@@ -2002,13 +2275,85 @@ begin
   ScreenShotImage.Picture.Assign(TempWIC);
 end;
 
-procedure TMainForm.NextImgBtnClick(Sender: TObject);
+procedure TSGLMainForm.NextImgBtnClick(Sender: TObject);
 begin
   if ImgList.Count = 0 then Exit;
 
   ImgCurIndex := (ImgCurIndex + 1) mod ImgList.Count;
   TempWIC.LoadFromFile(ImgList[ImgCurIndex]);
   ScreenShotImage.Picture.Assign(TempWIC);
+end;
+
+procedure TSGLMainForm.ToolBar1Click(Sender: TObject);
+var
+ TempList: TStringList;
+ WorkingDir: String;
+ IniValue: String;
+begin
+ if not (Sender is TToolButton) then Exit;
+
+ TempList := TStringList.Create;
+ try
+  // Читаем значение из INI
+  IniValue := FConfig.ReadString('ToolBar', TToolButton(Sender).Hint, '');
+
+  // Проверяем, что значение не пустое
+  if IniValue = '' then
+    Exit;
+
+  // Разбираем строку
+  StrToList(IniValue, '|', TempList);
+
+  // Проверяем минимальное количество элементов
+  if TempList.Count < 1 then
+    Exit;
+
+  // Определяем рабочую директорию
+  if (TempList.Count > 2) and (TempList[2] <> '') then
+    WorkingDir := TempList[2]
+  else
+    WorkingDir := ExtractFilePath(TempList[0]);
+
+  // Запускаем приложение
+  ShellExecute(0, 'open',
+               PChar(TempList[0]),  // Путь к файлу
+               PChar(IfThen(TempList.Count > 1, TempList[1], '')),  // Параметры
+               PChar(WorkingDir),   // Рабочая директория
+               SW_SHOWNORMAL);
+ finally
+  TempList.Free;
+ end;
+end;
+
+procedure TSGLMainForm.ToolBarTop1Click(Sender: TObject);
+var
+  I: Integer;
+  Root: TMenuItem;
+  AlignValue: Integer;
+begin
+  if not (Sender is TMenuItem) then Exit;
+
+  Root := TMenuItem(Sender).Parent;
+
+  // снимаем все галочки
+  for I := 0 to Root.Count - 1 do
+    Root.Items[I].Checked := False;
+
+  TMenuItem(Sender).Checked := True;
+
+  AlignValue :=
+    GetEnumValue(TypeInfo(TAlign), TMenuItem(Sender).Hint);
+
+  if AlignValue >= 0 then
+    ToolBar1.Align := TAlign(AlignValue);
+
+  case ToolBar1.Align of
+    alTop, alBottom:
+      ToolBar1.Height := 40;
+
+    alLeft, alRight:
+      ToolBar1.Width := 40;
+  end;
 end;
 
 end.

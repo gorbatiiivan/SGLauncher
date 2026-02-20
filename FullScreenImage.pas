@@ -34,13 +34,13 @@ var
   idx: Integer;
 begin
   // Проверяем, что главная форма жива и список не пустой
-  if (MainForm = nil) or (MainForm.ListView1.Items.Count = 0) then
+  if (SGLMainForm = nil) or (SGLMainForm.ListView1.Items.Count = 0) then
   begin
     Key := 0;
     Exit;
   end;
 
-  idx := MainForm.ListView1.ItemIndex;
+  idx := SGLMainForm.ListView1.ItemIndex;
   if idx < 0 then idx := 0;
 
   case Key of
@@ -48,17 +48,17 @@ begin
       if idx > 0 then Dec(idx);
 
     VK_DOWN:
-      if idx < MainForm.ListView1.Items.Count - 1 then Inc(idx);
+      if idx < SGLMainForm.ListView1.Items.Count - 1 then Inc(idx);
 
     VK_LEFT:
-      MainForm.PrevImgBtnClick(Sender);   // ? предыдущее
+      SGLMainForm.PrevImgBtnClick(Sender);   // ? предыдущее
 
     VK_RIGHT:
-      MainForm.NextImgBtnClick(Sender);   // ? следующее
+      SGLMainForm.NextImgBtnClick(Sender);   // ? следующее
 
     VK_RETURN:
      begin
-      MainForm.ListView1DblClick(Sender);
+      SGLMainForm.ListView1DblClick(Sender);
       Close;
      end;
 
@@ -70,12 +70,12 @@ begin
   end;
 
   // Применяем выбор
-  MainForm.ListView1.ItemIndex := idx;
-  MainForm.ListView1.Items[idx].MakeVisible(False);
-  Label1.Caption := MainForm.ListView1.Selected.Caption;
+  SGLMainForm.ListView1.ItemIndex := idx;
+  SGLMainForm.ListView1.Items[idx].MakeVisible(False);
+  Label1.Caption := SGLMainForm.ListView1.Selected.Caption;
 
   // Самое важное — делаем КОПИЮ изображения
-  FullScreenImage.Picture.Assign(MainForm.ScreenShotImage.Picture);
+  FullScreenImage.Picture.Assign(SGLMainForm.ScreenShotImage.Picture);
 
   Key := 0;  // глотаем клавишу
 end;
@@ -86,8 +86,8 @@ begin
  case Button of
    mbLeft :
     begin
-     MainForm.NextImgBtnClick(Sender);
-     FullScreenImage.Picture.WICImage := MainForm.ScreenShotImage.Picture.WICImage;
+     SGLMainForm.NextImgBtnClick(Sender);
+     FullScreenImage.Picture.WICImage := SGLMainForm.ScreenShotImage.Picture.WICImage;
     end;
    mbRight:  Close;
    mbMiddle: Close;

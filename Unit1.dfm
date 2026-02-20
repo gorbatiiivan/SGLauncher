@@ -1,4 +1,4 @@
-object MainForm: TMainForm
+object SGLMainForm: TSGLMainForm
   Left = 0
   Top = 0
   Margins.Left = 14
@@ -18,44 +18,48 @@ object MainForm: TMainForm
   OnResize = FormResize
   TextHeight = 15
   object TabControl1: TTabControl
-    Left = 0
-    Top = 0
-    Width = 957
-    Height = 750
+    AlignWithMargins = True
+    Left = 3
+    Top = 46
+    Width = 951
+    Height = 701
+    Margins.Top = 6
     Align = alClient
     TabOrder = 0
     OnChange = TabControl1Change
     object Splitter1: TSplitter
       Left = 313
       Top = 6
-      Height = 740
+      Height = 691
       OnAfterResize = FormResize
       ExplicitTop = 22
+      ExplicitHeight = 740
     end
     object Panel1: TPanel
       Left = 316
       Top = 6
-      Width = 637
-      Height = 740
+      Width = 631
+      Height = 691
       Align = alClient
       BevelOuter = bvNone
       TabOrder = 0
       object Splitter2: TSplitter
         Left = 0
         Top = 421
-        Width = 637
+        Width = 631
         Height = 3
         Cursor = crVSplit
         Align = alTop
         OnAfterResize = FormResize
         ExplicitLeft = -3
         ExplicitTop = 412
+        ExplicitWidth = 637
       end
       object Panel2: TPanel
         Left = 0
         Top = 424
-        Width = 637
-        Height = 316
+        Width = 631
+        Height = 267
         Align = alClient
         BevelOuter = bvNone
         TabOrder = 0
@@ -63,8 +67,8 @@ object MainForm: TMainForm
           AlignWithMargins = True
           Left = 97
           Top = 3
-          Width = 443
-          Height = 310
+          Width = 437
+          Height = 261
           Margins.Left = 55
           Margins.Right = 55
           Align = alClient
@@ -78,10 +82,10 @@ object MainForm: TMainForm
           ExplicitHeight = 226
         end
         object NextImgBtn: TSpeedButton
-          Left = 595
+          Left = 589
           Top = 0
           Width = 42
-          Height = 316
+          Height = 267
           Align = alRight
           Caption = '>'
           Enabled = False
@@ -93,12 +97,14 @@ object MainForm: TMainForm
           Font.Style = [fsBold]
           ParentFont = False
           OnClick = NextImgBtnClick
+          ExplicitLeft = 595
+          ExplicitHeight = 316
         end
         object PrevImgBtn: TSpeedButton
           Left = 0
           Top = 0
           Width = 42
-          Height = 316
+          Height = 267
           Align = alLeft
           Caption = '<'
           Enabled = False
@@ -110,13 +116,14 @@ object MainForm: TMainForm
           Font.Style = [fsBold]
           ParentFont = False
           OnClick = PrevImgBtnClick
+          ExplicitHeight = 316
         end
       end
       object ScrollBox1: TScrollBox
         AlignWithMargins = True
         Left = 6
         Top = 6
-        Width = 625
+        Width = 619
         Height = 409
         Margins.Left = 6
         Margins.Top = 6
@@ -134,7 +141,7 @@ object MainForm: TMainForm
           AlignWithMargins = True
           Left = 14
           Top = 206
-          Width = 605
+          Width = 599
           Height = 42
           Margins.Left = 14
           Margins.Top = 6
@@ -155,7 +162,7 @@ object MainForm: TMainForm
         object InfoPanel: TPanel
           Left = 0
           Top = 0
-          Width = 625
+          Width = 619
           Height = 200
           Align = alTop
           BevelOuter = bvNone
@@ -164,7 +171,7 @@ object MainForm: TMainForm
             AlignWithMargins = True
             Left = 14
             Top = 3
-            Width = 608
+            Width = 602
             Height = 32
             Margins.Left = 14
             Align = alTop
@@ -180,7 +187,7 @@ object MainForm: TMainForm
             AlignWithMargins = True
             Left = 14
             Top = 41
-            Width = 608
+            Width = 602
             Height = 15
             Margins.Left = 14
             Align = alTop
@@ -190,7 +197,7 @@ object MainForm: TMainForm
             AlignWithMargins = True
             Left = 14
             Top = 62
-            Width = 608
+            Width = 602
             Height = 15
             Margins.Left = 14
             Align = alTop
@@ -200,7 +207,7 @@ object MainForm: TMainForm
             AlignWithMargins = True
             Left = 14
             Top = 83
-            Width = 608
+            Width = 602
             Height = 15
             Margins.Left = 14
             Align = alTop
@@ -210,7 +217,7 @@ object MainForm: TMainForm
             AlignWithMargins = True
             Left = 14
             Top = 104
-            Width = 608
+            Width = 602
             Height = 15
             Margins.Left = 14
             Align = alTop
@@ -220,7 +227,7 @@ object MainForm: TMainForm
             AlignWithMargins = True
             Left = 14
             Top = 125
-            Width = 608
+            Width = 602
             Height = 15
             Margins.Left = 14
             Align = alTop
@@ -230,7 +237,7 @@ object MainForm: TMainForm
             AlignWithMargins = True
             Left = 14
             Top = 146
-            Width = 608
+            Width = 602
             Height = 15
             Margins.Left = 14
             Align = alTop
@@ -243,22 +250,30 @@ object MainForm: TMainForm
       Left = 4
       Top = 6
       Width = 309
-      Height = 740
+      Height = 691
       Align = alLeft
       BevelOuter = bvNone
+      DoubleBuffered = True
+      Font.Charset = DEFAULT_CHARSET
+      Font.Color = clWindowText
+      Font.Height = -12
+      Font.Name = 'Segoe UI'
+      Font.Style = []
+      ParentDoubleBuffered = False
+      ParentFont = False
       TabOrder = 1
       object ListView1: TListView
         Left = 0
         Top = 34
         Width = 309
-        Height = 706
+        Height = 657
         Align = alClient
         BorderStyle = bsNone
         Columns = <
           item
             Width = 514
           end>
-        DoubleBuffered = True
+        DoubleBuffered = False
         Font.Charset = DEFAULT_CHARSET
         Font.Color = clWindowText
         Font.Height = -15
@@ -324,6 +339,21 @@ object MainForm: TMainForm
       end
     end
   end
+  object ToolBar1: TToolBar
+    Left = 0
+    Top = 0
+    Width = 957
+    Height = 40
+    AutoSize = True
+    ButtonHeight = 38
+    ButtonWidth = 39
+    Caption = 'ToolBar1'
+    Constraints.MinHeight = 40
+    Constraints.MinWidth = 40
+    Images = ImageList1
+    TabOrder = 1
+    OnClick = ToolBar1Click
+  end
   object PopupMenu1: TPopupMenu
     Left = 345
     Top = 22
@@ -387,9 +417,42 @@ object MainForm: TMainForm
       object N6: TMenuItem
         Caption = '-'
       end
+      object StyleMenu1: TMenuItem
+        Caption = 'Style'
+      end
       object Hideonstartup1: TMenuItem
         Caption = 'Hide on startup'
         OnClick = Hideonstartup1Click
+      end
+      object ToolBarMenu1: TMenuItem
+        Caption = 'ToolBar'
+        object ShowToolBar: TMenuItem
+          Caption = 'Show'
+          OnClick = ShowToolBarClick
+        end
+        object AlignToolBar1: TMenuItem
+          Caption = 'Align to'
+          object ToolBarTop1: TMenuItem
+            Caption = 'Top'
+            Hint = 'alTop'
+            OnClick = ToolBarTop1Click
+          end
+          object ToolBarBottom1: TMenuItem
+            Caption = 'Bottom'
+            Hint = 'alBottom'
+            OnClick = ToolBarTop1Click
+          end
+          object ToolBarLeft1: TMenuItem
+            Caption = 'Left'
+            Hint = 'alLeft'
+            OnClick = ToolBarTop1Click
+          end
+          object ToolBarRight1: TMenuItem
+            Caption = 'Right'
+            Hint = 'alRight'
+            OnClick = ToolBarTop1Click
+          end
+        end
       end
       object N5: TMenuItem
         Caption = '-'
@@ -406,5 +469,13 @@ object MainForm: TMainForm
       Caption = 'Exit'
       OnClick = Exit1Click
     end
+  end
+  object ImageList1: TImageList
+    ColorDepth = cd32Bit
+    DrawingStyle = dsTransparent
+    Height = 32
+    Width = 32
+    Left = 544
+    Top = 24
   end
 end
