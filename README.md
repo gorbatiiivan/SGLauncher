@@ -10,7 +10,7 @@ Portable launcher for eXo collections.
 
 
 
-Tested with eXoDos, eXoWin3x, eXoWin9x.
+Tested with eXoDos, eXoWin3x, eXoWin9x, eXoIF, eXoAppleIIGS.
 
 Not tested with languages pack.
 
@@ -26,6 +26,8 @@ eXoDos=!dos
 eXoWin3x=!win3x    
 
 eXoWin9x=!win9x
+
+eXoAppleIIGS=!appleiigs
 
 <img width="428" height="172" alt="02" src="https://github.com/user-attachments/assets/391d6e36-89d6-425d-9a3c-bc98fe1eee12" />
 
