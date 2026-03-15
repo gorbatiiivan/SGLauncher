@@ -14,6 +14,7 @@ Tested with eXoDos, eXoWin3x, eXoWin9x, eXoIF, eXoAppleIIGS, eXoDemoScene.
 
 Not tested with languages pack.
 
+Should work with all LaunchBox collections.
 
 ------------------------------------------------------------------------------------------------------
 
