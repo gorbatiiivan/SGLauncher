@@ -144,8 +144,10 @@
         <DCCReference Include="ToolBtnProperties.pas">
             <Form>ToolBtnPropertiesForm</Form>
         </DCCReference>
+        <DCCReference Include="SystemUtils.pas"/>
+        <DCCReference Include="Snake.pas"/>
         <RcItem Include="Icon2.ico">
-            <ResourceType>RCDATA</ResourceType>
+            <ResourceType>ICON</ResourceType>
             <ResourceId>OnLoadIcon</ResourceId>
         </RcItem>
         <BuildConfiguration Include="Base">

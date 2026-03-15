@@ -36,7 +36,7 @@ var
 
 implementation
 
-uses Unit1, ABSnake;
+uses Unit1, Snake;
 
 {$R *.dfm}
 

@@ -43,7 +43,7 @@ var
 
 implementation
 
-uses Unit1;
+uses Unit1, SystemUtils;
 
 {$R *.dfm}
 
@@ -254,7 +254,7 @@ begin
         NewButton.PopupMenu := SharedPopup;
 
        TempList.Clear;
-       SGLMainForm.StrToList(ButtonList.ValueFromIndex[i], '|', TempList);
+       StrToList(ButtonList.ValueFromIndex[i], '|', TempList);
 
        // проверка индексов
        if TempList.Count >= 1 then // Есть хотя бы путь к файлу
@@ -467,7 +467,7 @@ begin
         OldHint := Button.Hint;
 
         // Разбираем текущие значения кнопки
-        SGLMainForm.StrToList(Button.Caption, '|', TempList);
+        StrToList(Button.Caption, '|', TempList);
 
         with ToolBtnPropertiesForm do
         begin
@@ -557,7 +557,7 @@ var
 begin
  if LNKPROP_EDIT4.Text <> '' then
   DiagDir := ExtractFilePath(LNKPROP_EDIT4.Text)
- else DiagDir := '';
+ else DiagDir := ExtractFilePath(LNKPROP_EDIT2.Text);
 
  if OpenDialogEx('Select dir', False, sFile, DiagDir) then
   begin
@@ -572,7 +572,7 @@ var
 begin
  if LNKPROP_EDIT5.Text <> '' then
   DiagDir := ExtractFilePath(LNKPROP_EDIT5.Text)
- else DiagDir := '';
+ else DiagDir := ExtractFilePath(LNKPROP_EDIT2.Text);
 
  if OpenDialogEx('Select file', True, sFile, DiagDir) then
   begin

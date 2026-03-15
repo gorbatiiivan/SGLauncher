@@ -7,10 +7,11 @@ uses
   System.IOUtils, Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.ComCtrls,
   Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.Buttons, Vcl.Imaging.jpeg, Vcl.Imaging.pngimage,
   Vcl.Imaging.GIFImg, Xml.XMLIntf, Xml.XMLDoc, Math, ActiveX, ComObj, ShellAPI,
-  IniFiles, Vcl.Menus, ShlObj, Vcl.ImgList, StrUtils, System.Generics.Collections;
+  IniFiles, Vcl.Menus, ShlObj, Vcl.ImgList, StrUtils, System.Generics.Collections,
+  System.ImageList, Vcl.ToolWin, Vcl.Themes, System.TypInfo, SyncObjs;
 
 const
-  sReleaseDate = '28.01.2026';
+  sReleaseDate = '20.02.2026';
 
 type
   TGameData = record
@@ -26,10 +27,11 @@ type
     Manual: string;
     ConfigurationPath: string;
     RootFolder: string;
+    ID: string;
   end;
 
 type
-  TMainForm = class(TForm)
+  TSGLMainForm = class(TForm)
     TabControl1: TTabControl;
     Panel1: TPanel;
     Panel2: TPanel;
@@ -74,6 +76,17 @@ type
     N6: TMenuItem;
     N7: TMenuItem;
     DesktopShortcut1: TMenuItem;
+    ToolBar1: TToolBar;
+    ImageList1: TImageList;
+    ShowToolBar: TMenuItem;
+    ToolBarMenu1: TMenuItem;
+    AlignToolBar1: TMenuItem;
+    ToolBarLeft1: TMenuItem;
+    ToolBarBottom1: TMenuItem;
+    ToolBarTop1: TMenuItem;
+    ToolBarRight1: TMenuItem;
+    StyleMenu1: TMenuItem;
+    Autostart1: TMenuItem;
     procedure FormResize(Sender: TObject);
     procedure ListView1Data(Sender: TObject; Item: TListItem);
     procedure ListView1SelectItem(Sender: TObject; Item: TListItem; Selected: Boolean);
@@ -102,11 +115,15 @@ type
       Shift: TShiftState);
     procedure About1Click(Sender: TObject);
     procedure DesktopShortcut1Click(Sender: TObject);
+    procedure ToolBar1Click(Sender: TObject);
+    procedure ShowToolBarClick(Sender: TObject);
+    procedure ToolBarTop1Click(Sender: TObject);
+    procedure Autostart1Click(Sender: TObject);
   private
-    TempWIC: TWICImage;
-    FConfig: TMemIniFile;
     NConfig: TMemIniFile;
     FClosing: Boolean;
+    FMsgShow: UINT; // Для Mutex
+    // XML
     //----------------------
     FGameData: array of TGameData;
     FFilteredIndices: TArray<Integer>;
@@ -117,42 +134,50 @@ type
     FSearchText: string;
     ImgCurIndex: Integer;
     ImgList: TStringList;
+    FIgnoredFolders: TStringList;
     // Для поиска
+    //----------------------
     FTypeBuffer: string;
     FLastTypeTick: Cardinal;
+    // Для потоковой загрузки изображений
     //----------------------
-    // Для кэша изображдения
-    FImageCache: TDictionary<string, TStringList>;
-    FCacheBuilt: Boolean;
+    FImageLoadThread: TThread;
+    FImageLoadPending: Boolean;        // Флаг, что нужно загрузить изображения
+    FImageLoadGameIndex: Integer;      // Индекс игры для загрузки
+    FImageLoadRealIndex: Integer;      // Реальный индекс в FGameData
+    FImageLoadItemIndex: Integer;      // Индекс в ListView
+    FImageLoadLock: TCriticalSection;  // Для синхронизации доступа к данным
+    FImageLoadCancel: Boolean;         // Отмена текущей загрузки
     //----------------------
     procedure AddGameToArray(const G: TGameData);
     procedure SortGameData;
     procedure LoadXMLToArray(const XMLFileName: string);
     procedure ScanXMLFromDir(const Dir: string);
     procedure ApplyFilters;
-    procedure AddImagesToList(const ImagesPath: string;
-                                    SourcePath: TListView;
-                                    const ForcedBaseName: string = '');
     procedure InitializeComboBoxes;
     procedure FinalizeLoading;
     procedure UpdateExtrasMenu(const GameIndex: Integer);
     procedure ClearGameInfo;
     procedure UpdateGenreSeriesComboForCurrentPlatform;
     procedure ShowGameByIndex(const ItemIndex: Integer);
+    procedure LoadImageWithRetry(const FileName: string;
+              Image: TImage; MaxRetries: Integer = 1);
+    procedure StartImageLoadThread(ItemIndex, RealIndex: Integer);
+    procedure FindGameImages(const Platforms, GameName, ReleaseDate, ID,
+              ForcedName: string; ImageList: TStringList);
     function GetFConfig: TMemIniFile;
     function GetNConfig: TMemIniFile;
     procedure RegIni(Write: Boolean);
     procedure OnExtrasMenuItemClick(Sender: TObject);
-    // Для кэша изображдения
-    procedure FreeImageCache;
-    procedure BuildImageCache; // один раз собираем всё
-    procedure RunCacheImages;
+    procedure StyleMenuClick(Sender: TObject);
     //----------------------
-
+    procedure WMCopyData(var Msg: TWMCopyData); message WM_COPYDATA;
+   public
+    FConfig: TMemIniFile;
   end;
 
 var
-  MainForm: TMainForm;
+  SGLMainForm: TSGLMainForm;
   LaunchBoxDir: String = '';
   IgnoreDir: String;
   HideInTray: Boolean = False;
@@ -161,66 +186,10 @@ implementation
 
 {$R *.dfm}
 
-uses FullScreenImage, DialogForm, Help;
+uses FullScreenImage, DialogForm, Help, ToolBtnProperties, SystemUtils;
 
-//----FUNCTIONS----
+// XML
 //------------------------------------------------------------------------------
-function ShellOpen(const FileName: string): Boolean;
-const
-  ERR_MSG: array[0..31] of string = (
-    '', 'File not found', 'Path not found', '', 'Access denied', '', '', 'Out of memory',
-    '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', 'The connection is incomplete',
-    'DDE is busy', 'DDE error', 'DDE is busy', 'No association', 'DLL not found'
-  );
-var
-  Res: HINST;
-  s: string;
-begin
-  Res := ShellExecute(0, 'open', PChar(FileName), nil, PChar(ExtractFilePath(FileName)), SW_SHOWNORMAL);
-
-  Result := Res > 32;
-  if Result then Exit;
-
-  if (Res >= Low(ERR_MSG)) and (Res <= High(ERR_MSG)) and (ERR_MSG[Res] <> '') then
-    s := ERR_MSG[Res]
-  else
-    s := Format('Error %d', [Res]);
-
-  MessageDlg('Failed to open:' + #13#10 + FileName + #13#10#13#10 + s,
-    mtError, [mbOK], 0);
-end;
-
-procedure StrToList(const S, Sign: string; SList: TStrings);
-var
-  CurPos: integer;
-  CurStr: string;
-begin
-  SList.clear;
-  SList.BeginUpdate();
-  try
-    CurStr := S;
-    repeat
-      CurPos := Pos(Sign, CurStr);
-      if (CurPos > 0) then
-      begin
-        SList.Add(Copy(CurStr, 1, Pred(CurPos)));
-        CurStr := Trim(Copy(CurStr, CurPos + Length(Sign),
-          Length(CurStr) - CurPos - Length(Sign) + 1));
-      end
-      else
-        SList.Add(CurStr);
-    until CurPos = 0;
-  finally
-    SList.EndUpdate();
-  end;
-end;
-
-function GetExecPath: String;
-begin
-  SetCurrentDir(IncludeTrailingPathDelimiter(ExtractFileDir(ExtractFileDir(ParamStr(0)))));
-  Result := IncludeTrailingPathDelimiter(ExtractFileDir(ExtractFileDir(ParamStr(0))));
-end;
-
 function GetYear(const Date: string): string;
 var
   fs: TFormatSettings;
@@ -241,11 +210,11 @@ begin
   end;
 end;
 
-function NormalizeLaunchBoxPath(const RelPath: string): string;
+function NormalizeLaunchBoxPath(const RelPath: string;
+  IgnoredFolders: TStringList): string;
 var
   Parts: TArray<string>;
   CleanParts: TArray<string>;
-  IgnoredFolders: TStringList;
   I, C: Integer;
   FolderName: string;
 begin
@@ -253,12 +222,6 @@ begin
   Parts := RelPath.Split(['\', '/']);
   SetLength(CleanParts, Length(Parts));
   C := 0;
-
-  // Список игнорируемых папок
-  IgnoredFolders := TStringList.Create;
-  try
-    IgnoredFolders.CaseSensitive := False;
-    StrToList(IgnoreDir, ';', IgnoredFolders);
 
     for I := 0 to High(Parts) do
     begin
@@ -281,9 +244,6 @@ begin
       CleanParts[C] := FolderName;
       Inc(C);
     end;
-  finally
-    IgnoredFolders.Free;
-  end;
 
   SetLength(CleanParts, C);
 
@@ -300,7 +260,7 @@ begin
     Exit;
 
   // Убираем папки вида !xxx из пути (как ты и хотел)
-  CleanRelPath := NormalizeLaunchBoxPath(G.ApplicationPath);
+  CleanRelPath := NormalizeLaunchBoxPath(G.ApplicationPath, SGLMainForm.FIgnoredFolders);
 
   // Если после очистки путь пустой — игра не установлена
   if CleanRelPath = '' then
@@ -323,146 +283,24 @@ begin
     Result := True;
 end;
 
-function LoadIconFromRCDATA(const ResourceName: string): TIcon;
+procedure TSGLMainForm.AddGameToArray(const G: TGameData);
 var
-  Stream: TResourceStream;
+  NewCapacity: Integer;
 begin
-  Result := TIcon.Create;  // Создаём результат сразу
-  try
-    Stream := TResourceStream.Create(HInstance, ResourceName, RT_RCDATA);
-    try
-      Result.LoadFromStream(Stream);  // Загружаем в Result
-    finally
-      Stream.Free;
-    end;
-  except
-    Result.Free;  // Если ошибка — освобождаем и пробрасываем дальше
-    raise;
-  end;
-end;
-
-//Функция для пересчёта высоты Label в ScrollBox
-procedure ResizeLabelToText(ALabel: TLabel);
-var
-  R: TRect;
-begin
-  R := Rect(0, 0, ALabel.Width, MaxInt);
-  ALabel.Canvas.Font.Assign(ALabel.Font);
-  DrawText(ALabel.Canvas.Handle,
-    PChar(ALabel.Caption),
-    -1,
-    R,
-    DT_WORDBREAK or DT_CALCRECT);
-
-  ALabel.Height := R.Bottom - R.Top;
-end;
-
-function GetLabelHeight(ALabel: TLabel; const AText: string; AWidth: Integer): Integer;
-var
-  R: TRect;
-begin
-  R := Rect(0, 0, AWidth, 0);
-  ALabel.Canvas.Font := ALabel.Font;  // Копируем шрифт
-  DrawText(ALabel.Canvas.Handle, PChar(AText), -1, R,
-           DT_CALCRECT or DT_WORDBREAK or DT_LEFT);
-  Result := R.Bottom - R.Top;
-end;
-
-function CreateDesktopShellLink(
-  const TargetExePath: string;           // полный путь к .exe
-  const CustomLinkName: string = '';     // желаемое имя без .lnk (если пусто → берётся из TargetExePath)
-  const Description: string = '';         // всплывающая подсказка
-  const Arguments: string = '';           // аргументы командной строки
-  const WorkingDir: string = '';          // рабочая папка (по умолчанию — папка программы)
-  const IconPath: string = '';            // путь к иконке (может быть .exe, .dll, .ico)
-  const IconIndex: Integer = 0            // индекс иконки внутри файла
-): Boolean;
-//Функция для создание ярлыка на рабочем столе
-var
-  ShellLink   : IShellLink;
-  PersistFile : IPersistFile;
-  DesktopPIDL : PItemIDList;
-  DesktopPath : array[0..MAX_PATH-1] of Char;
-  BaseName    : WideString;
-  LinkName    : WideString;
-  FinalLinkPath : WideString;
-  Counter     : Integer;
-begin
-  Result := False;
-
-  if not FileExists(TargetExePath) then
-    Exit;
-
-  // Получаем путь к рабочему столу
-  if Failed(SHGetSpecialFolderLocation(0, CSIDL_DESKTOP, DesktopPIDL)) then
-    Exit;
-
-  try
-    if not SHGetPathFromIDList(DesktopPIDL, DesktopPath) then
-      Exit;
-
-    // Определяем базовое имя ярлыка (без .lnk)
-    if CustomLinkName <> '' then
-      BaseName := CustomLinkName
-    else
-      BaseName := ChangeFileExt(ExtractFileName(TargetExePath), '');
-
-    // Начинаем с оригинального имени
-    LinkName := BaseName + '.lnk';
-    FinalLinkPath := WideString(IncludeTrailingPathDelimiter(DesktopPath)) + LinkName;
-
-    // Если существует → добавляем (1), (2), ...
-    Counter := 1;
-    while FileExists(FinalLinkPath) do
-    begin
-      LinkName := BaseName + ' (' + IntToStr(Counter) + ').lnk';
-      FinalLinkPath := WideString(IncludeTrailingPathDelimiter(DesktopPath)) + LinkName;
-      Inc(Counter);
-    end;
-
-    // Создаём COM-объект ярлыка
-    ShellLink := CreateComObject(CLSID_ShellLink) as IShellLink;
-
-    ShellLink.SetPath(PChar(TargetExePath));
-    ShellLink.SetDescription(PChar(Description));
-
-    if WorkingDir <> '' then
-      ShellLink.SetWorkingDirectory(PChar(WorkingDir))
-    else
-      ShellLink.SetWorkingDirectory(PChar(ExtractFilePath(TargetExePath)));
-
-    if Arguments <> '' then
-      ShellLink.SetArguments(PChar(Arguments));
-
-    if IconPath <> '' then
-      ShellLink.SetIconLocation(PChar(IconPath), IconIndex);
-
-    PersistFile := ShellLink as IPersistFile;
-
-    // Сохраняем
-    Result := Succeeded(
-      PersistFile.Save(
-        PWideChar(FinalLinkPath),
-        False
-      )
-    );
-
-  finally
-    if Assigned(DesktopPIDL) then
-      CoTaskMemFree(DesktopPIDL);
-  end;
-end;
-
-procedure TMainForm.AddGameToArray(const G: TGameData);
-begin
-  // Выделяем память блоками по 100 элементов для ускорения
   if FActualGameCount >= Length(FGameData) then
-    SetLength(FGameData, Length(FGameData) + 100);
+  begin
+    // Удвоение: начинаем с 256, каждый раз ×2
+    if Length(FGameData) = 0 then
+      NewCapacity := 256
+    else
+      NewCapacity := Length(FGameData) * 2;
+    SetLength(FGameData, NewCapacity);
+  end;
   FGameData[FActualGameCount] := G;
   Inc(FActualGameCount);
 end;
 
-procedure TMainForm.UpdateExtrasMenu(const GameIndex: Integer);
+procedure TSGLMainForm.UpdateExtrasMenu(const GameIndex: Integer);
 
   // Вспомогательная процедура сортировки
   procedure SortStringArray(var Arr: TStringDynArray);
@@ -603,11 +441,14 @@ begin
     PopupMenu1.Images.Height := 16;
   end;
 
+  if Assigned(PopupMenu1.Images) then
+  PopupMenu1.Images.Clear;
+
   // сразу добавляем содержимое Extras в основное меню
   AddFolderToMenu(PopupMenu1.Items, FullExtrasPath);
 end;
 
-procedure TMainForm.ClearGameInfo;
+procedure TSGLMainForm.ClearGameInfo;
 begin
   ListView1.ItemIndex := -1;
   TitleLabel.Caption := '';
@@ -628,251 +469,7 @@ begin
     PopupMenu1.Items.Delete(PopupMenu1.Items.Count - 1);
 end;
 
-procedure TMainForm.AddImagesToList(const ImagesPath: string;
-  SourcePath: TListView;
-  const ForcedBaseName: string = '');
-var
-  PlatformDir: string;
-  Platform2: string;
-  Year: string;
-  BaseNameNoYear, BaseNameWithYear, BaseNameWithYearNoSpace: string;
-  PriorityFolders: TArray<string>;
-  Folder: string;
-  SearchPath: string;
-  Files: TStringDynArray;
-  FilePath, FileName: string;
-  i: Integer;
-  ExcludedDirs: TStringList;
-
-  function OneLine(const s: string): string;
-  const
-    BadChars1     = ':"''/\<>|?*[]''';  // Старые, критические — заменяем первыми
-    //BadChars2     = '?:';         // Новые дополнительные символы (добавьте свои)
-  var
-    i: Integer;
-  begin
-   Result := s;
-
-   // Сначала заменяем старые запрещённые символы
-   for i := 1 to Length(BadChars1) do
-     Result := StringReplace(Result, BadChars1[i], '_', [rfReplaceAll]);
-
-   // Потом — новые дополнительные
-   {for i := 1 to Length(BadChars2) do
-     Result := StringReplace(Result, BadChars2[i], '_', [rfReplaceAll]);}
-
-   Result := StringReplace(Result, Char($00B3), '#U00b3', [rfReplaceAll]);
-   Result := StringReplace(Result, Char($00E9), 'e', [rfReplaceAll]);
-   Result := StringReplace(Result, Char($00E0), 'a', [rfReplaceAll]);
-   Result := StringReplace(Result, Char($00FF), 'y', [rfReplaceAll]);
-   {for i := 1 to Length(Result) do
-    if Result[i] in ['?', ':'] then Result[i] := '_';}
-  end;
-
-  function IsValidMatch(const FileName, BaseName: string): Boolean;
-  var
-    NextChar: Char;
-  begin
-    // Точное совпадение
-    if SameText(FileName, BaseName) then
-      Exit(True);
-
-    // Совпадение с дефисом и номером (например, Caesar-00)
-    if StartsText(BaseName + '-', FileName) then
-      Exit(True);
-
-    // Совпадение с годом в скобках (например, Caesar(1998))
-    if StartsText(BaseName + '(', FileName) then
-      Exit(True);
-
-    // Совпадение с годом и пробелом (например, Caesar (1998))
-    if StartsText(BaseName + ' (', FileName) then
-      Exit(True);
-
-    // Если имя файла длиннее базового имени
-    if Length(FileName) > Length(BaseName) then
-    begin
-      // Проверяем, что начинается с BaseName
-      if StartsText(BaseName, FileName) then
-      begin
-        NextChar := FileName[Length(BaseName) + 1];
-        // Следующий символ НЕ должен быть буквой или цифрой
-        // (это означало бы продолжение имени, как в "Caesar II")
-        if CharInSet(NextChar, ['A'..'Z', 'a'..'z', '0'..'9']) then
-          Exit(False);
-      end;
-    end;
-
-    Result := False;
-  end;
-
-  function MatchForcedPlainName(const FileName, ForcedName: string): Boolean;
-  begin
-    Result := SameText(FileName, ForcedName);
-  end;
-
-  function MatchForcedNumberedName(const FileName, ForcedName: string): Boolean;
-  var
-    i: Integer;
-    Num: string;
-  begin
-    for i := 0 to 20 do
-    begin
-      Num := Format('%.2d', [i]); // 00 .. 20
-      if SameText(FileName, ForcedName + '-' + Num) then
-        Exit(True);
-    end;
-    Result := False;
-  end;
-
-  // Внутренняя функция для добавления файлов из одного набора
-  procedure TryAddFromFolder(const BaseFolder: string; MaxWanted: Integer = MaxInt);
-  var
-    j, added: Integer;
-  begin
-    SearchPath := IncludeTrailingPathDelimiter(PlatformDir) + BaseFolder;
-    if not TDirectory.Exists(SearchPath) then Exit;
-
-    Files := TDirectory.GetFiles(SearchPath, '*.*', TSearchOption.soAllDirectories);
-    added := 0;
-
-    for j := 0 to High(Files) do
-    begin
-      if ImgList.Count >= MaxWanted then Break;
-
-      FilePath := Files[j];
-      FileName := OneLine(TPath.GetFileNameWithoutExtension(FilePath));
-
-      if ForcedBaseName <> '' then
-      begin
-        if SameText(FileName, ForcedBaseName) or
-           StartsText(ForcedBaseName + '-', FileName) or
-           MatchForcedNumberedName(FileName, ForcedBaseName) then
-        begin
-          if ImgList.IndexOf(FilePath) = -1 then
-          begin
-            ImgList.Add(FilePath);
-            Inc(added);
-          end;
-        end;
-      end
-      else
-      begin
-        if IsValidMatch(FileName, BaseNameNoYear) or
-           ((BaseNameWithYear <> '') and IsValidMatch(FileName, BaseNameWithYear)) or
-           ((BaseNameWithYearNoSpace <> '') and IsValidMatch(FileName, BaseNameWithYearNoSpace)) then
-        begin
-          if ImgList.IndexOf(FilePath) = -1 then
-          begin
-            ImgList.Add(FilePath);
-            Inc(added);
-          end;
-        end;
-      end;
-    end;
-  end;
-
-begin
-  ImgList.Clear;
-  ScreenShotImage.Picture := nil;
-  NextImgBtn.Enabled := False;
-  PrevImgBtn.Enabled := False;
-  ImgCurIndex := -1;
-
-  if (SourcePath = nil) or (SourcePath.Selected = nil) then Exit;
-
-  Platform2 := SourcePath.Selected.SubItems[1];  // Platforms
-  PlatformDir := IncludeTrailingPathDelimiter(LaunchBoxDir) + 'Images\' + Platform2;
-
-  if not TDirectory.Exists(PlatformDir) then Exit;
-
-  Year := GetYear(SourcePath.Selected.SubItems[2]);
-
-  BaseNameNoYear := OneLine(SourcePath.Selected.Caption);
-  BaseNameWithYear := '';
-  BaseNameWithYearNoSpace := '';
-
-  if Year <> '' then
-  begin
-    BaseNameWithYear := OneLine(SourcePath.Selected.Caption + ' (' + Year + ')');
-    BaseNameWithYearNoSpace := OneLine(SourcePath.Selected.Caption + '(' + Year + ')');
-  end;
-
-  // ───────────────────────────────────────────────
-  // 1. Сначала приоритетные папки — в строгом порядке
-  // ───────────────────────────────────────────────
-  PriorityFolders := [
-    'Screenshot - Gameplay',
-    'Screenshot - Game Title',
-    'Disc',
-    'Box - Front',
-    'Box - Back'
-  ];
-
-  for Folder in PriorityFolders do
-    TryAddFromFolder(Folder, 9999);   // лимит высокий, чтобы взять все подходящие
-
-  // ───────────────────────────────────────────────
-  // 2. Если почти ничего не нашли — ищем по всей остальной структуре
-  // ───────────────────────────────────────────────
-  if ImgList.Count < 2 then   // например, если нашли 0 или только 1 картинку
-  begin
-    // Полный рекурсивный поиск по всей платформе, исключая уже проверенные папки
-    var AllFiles := TDirectory.GetFiles(PlatformDir, '*.*', TSearchOption.soAllDirectories);
-
-    for FilePath in AllFiles do
-    begin
-      // Пропускаем файлы из уже обработанных приоритетных папок
-      var InPriority := False;
-      for Folder in PriorityFolders do
-        if Pos(IncludeTrailingPathDelimiter(Folder), FilePath) > 0 then
-        begin
-          InPriority := True;
-          Break;
-        end;
-
-      if InPriority then Continue;
-
-      FileName := OneLine(TPath.GetFileNameWithoutExtension(FilePath));
-
-      if ForcedBaseName <> '' then
-      begin
-        if SameText(FileName, ForcedBaseName) or
-           StartsText(ForcedBaseName + '-', FileName) or
-           MatchForcedNumberedName(FileName, ForcedBaseName) then
-          if ImgList.IndexOf(FilePath) = -1 then
-            ImgList.Add(FilePath);
-      end
-      else
-      begin
-        if IsValidMatch(FileName, BaseNameNoYear) or
-           ((BaseNameWithYear <> '') and IsValidMatch(FileName, BaseNameWithYear)) or
-           ((BaseNameWithYearNoSpace <> '') and IsValidMatch(FileName, BaseNameWithYearNoSpace)) then
-          if ImgList.IndexOf(FilePath) = -1 then
-            ImgList.Add(FilePath);
-      end;
-    end;
-  end;
-
-  // ───────────────────────────────────────────────
-  // Показываем первое изображение, если что-то нашли
-  // ───────────────────────────────────────────────
-  if ImgList.Count > 0 then
-  begin
-    try
-      TempWIC.LoadFromFile(ImgList[0]);
-      ScreenShotImage.Picture.Assign(TempWIC);
-      ImgCurIndex := 0;
-    except
-      // silent fail или можно поставить placeholder
-    end;
-
-    NextImgBtn.Enabled := ImgList.Count > 1;
-    PrevImgBtn.Enabled := ImgList.Count > 1;
-  end;
-end;
-
-procedure TMainForm.InitializeComboBoxes;
+procedure TSGLMainForm.InitializeComboBoxes;
 var
   i, j: Integer;
   Items: TStringList;
@@ -943,10 +540,12 @@ begin
   end;
 end;
 
-procedure TMainForm.FinalizeLoading;
+procedure TSGLMainForm.FinalizeLoading;
 var
   PlatformsDir: string;
   XMLFiles: TStringDynArray;
+  SavedTab: string;
+  TabIdx: Integer;
 begin
   PlatformsDir := LaunchBoxDir + '\Data\Platforms\';
 
@@ -954,7 +553,7 @@ begin
   if not TDirectory.Exists(PlatformsDir) then
   begin
     TrayIcon.Icon := Application.Icon;
-    MainForm.Icon := Application.Icon;
+    SGLMainForm.Icon := Application.Icon;
     Caption := 'Folder not found';
     TrayIcon.Hint := Caption;
     Exit;
@@ -966,7 +565,7 @@ begin
   if Length(XMLFiles) = 0 then
   begin
     TrayIcon.Icon := Application.Icon;
-    MainForm.Icon := Application.Icon;
+    SGLMainForm.Icon := Application.Icon;
     Caption := 'No XML files';
     TrayIcon.Hint := Caption;
     Exit;
@@ -986,6 +585,7 @@ begin
         if TThread.CurrentThread.CheckTerminated or FClosing then Exit;
 
         ScanXMLFromDir(PlatformsDir);
+        SetLength(FGameData, FActualGameCount);
 
         if TThread.CurrentThread.CheckTerminated or FClosing then Exit;
 
@@ -994,18 +594,36 @@ begin
         ScrollBox1.Enabled := True;
         NextImgBtn.Enabled := True;
         TrayIcon.Icon := Application.Icon;
-        MainForm.Icon := Application.Icon;
+        SGLMainForm.Icon := Application.Icon;
 
         TThread.Queue(nil,
           procedure
           begin
-            InitializeComboBoxes;
-            FLoadingComplete := True;
+            InitializeComboBoxes; // строятся вкладки
+            FLoadingComplete := True; // разрешаем фильтрацию
+            // Загрузка последней сохраненной вкладке
+            SavedTab := FConfig.ReadString('SGAllSettings', 'LastTab', 'All');
+            TabIdx := TabControl1.Tabs.IndexOf(SavedTab);
+            if TabIdx < 0 then TabIdx := TabControl1.Tabs.IndexOf('All');
+            if TabIdx < 0 then TabIdx := 0;
+            TabControl1.TabIndex := TabIdx;
+            //------------------------------------------------------------------
+            UpdateGenreSeriesComboForCurrentPlatform;
+            ApplyFilters;
             ListView1.Items.Count := Length(FFilteredIndices);
             ListView1.Invalidate;
             ListView1.Refresh;
             Caption := 'Total Games: ' + IntToStr(Length(FGameData));
             TrayIcon.Hint := Caption;
+
+            // Выделяем первую игру
+            ActiveControl := ListView1;
+            if ListView1.Items.Count > 0 then
+             begin
+              ListView1.ItemIndex := 0;
+              ListView1.Selected := ListView1.Items[0];
+              ListView1.Selected.MakeVisible(False);
+             end;
           end
         );
       finally
@@ -1018,10 +636,9 @@ begin
   FLoaderThread.Start;
 end;
 
-procedure TMainForm.ApplyFilters;
+procedure TSGLMainForm.ApplyFilters;
 var
   i, j, Count: Integer;
-  Filtered: TArray<Integer>;
   SelectedGenre, SelectedPlatform: string;
   GameGenres: TStringDynArray;
   GenreMatch: Boolean;
@@ -1034,7 +651,7 @@ begin
   SelectedPlatform := TabControl1.Tabs[TabControl1.TabIndex];
 
   Count := 0;
-  SetLength(Filtered, Length(FGameData));
+  SetLength(FFilteredIndices, Length(FGameData));
 
   for i := 0 to High(FGameData) do
   begin
@@ -1089,12 +706,11 @@ begin
        (Pos(LowerCase(FSearchText), LowerCase(FGameData[i].GameName)) = 0) then
       Continue;
 
-    Filtered[Count] := i;
+    FFilteredIndices[Count] := i;
     Inc(Count);
   end;
 
-  SetLength(Filtered, Count);
-  FFilteredIndices := Filtered;
+  SetLength(FFilteredIndices, Count);
 
   ListView1.Items.Count := Length(FFilteredIndices);
   ListView1.Invalidate;
@@ -1105,7 +721,7 @@ begin
   ClearGameInfo;
 end;
 
-procedure TMainForm.SortGameData;
+procedure TSGLMainForm.SortGameData;
 procedure QuickSort(L, R: Integer);
   var
     I, J: Integer;
@@ -1144,7 +760,7 @@ begin
     QuickSort(0, High(FGameData));
 end;
 
-procedure TMainForm.UpdateGenreSeriesComboForCurrentPlatform;
+procedure TSGLMainForm.UpdateGenreSeriesComboForCurrentPlatform;
 var
   i, j: Integer;
   GenresSeries: TStringList;
@@ -1219,10 +835,9 @@ begin
   end;
 end;
 
-procedure TMainForm.ShowGameByIndex(const ItemIndex: Integer);
+procedure TSGLMainForm.ShowGameByIndex(const ItemIndex: Integer);
 var
   RealIndex: Integer;
-  ForceImgName: String;
 begin
   if ItemIndex < 0 then Exit;
   if ItemIndex >= Length(FFilteredIndices) then Exit;
@@ -1258,21 +873,407 @@ begin
      Configuration1.Enabled := IsGameInstalled(FGameData[RealIndex]);
     end;
 
-  // ===== IMAGES =====
-  if not NConfig.ValueExists(FGameData[RealIndex].Platforms, FGameData[RealIndex].GameName) then
-   ForceImgName := ''
-  else
-   ForceImgName := NConfig.ReadString(FGameData[RealIndex].Platforms,
-     FGameData[RealIndex].GameName, '');
-  AddImagesToList(
-    LaunchBoxDir + '\Images\' + FGameData[RealIndex].Platforms,
-    ListView1, ForceImgName);
+  // ===== ЗАПУСКАЕМ ПОТОК ДЛЯ ЗАГРУЗКИ ИЗОБРАЖЕНИЙ =====
+  StartImageLoadThread(ItemIndex, RealIndex);
 
   // ===== EXTRAS =====
   UpdateExtrasMenu(RealIndex);
 end;
 
-procedure TMainForm.LoadXMLToArray(const XMLFileName: string);
+procedure TSGLMainForm.LoadImageWithRetry(const FileName: string;
+  Image: TImage; MaxRetries: Integer = 1);
+var
+  WICImage: TWICImage;
+  RetryCount: Integer;
+  LoadSuccess: Boolean;
+begin
+  RetryCount := 0;
+  LoadSuccess := False;
+
+  while (RetryCount < MaxRetries) and not LoadSuccess do
+  begin
+    try
+      WICImage := TWICImage.Create;
+      try
+        WICImage.LoadFromFile(FileName);
+
+        if not WICImage.Empty then
+        begin
+          Image.Picture.Assign(WICImage);
+          LoadSuccess := True; // Успех!
+        end;
+      finally
+        WICImage.Free;
+      end;
+
+    except
+      on E: Exception do
+      begin
+        Inc(RetryCount);
+        // Просто увеличиваем счётчик, никаких пауз
+      end;
+    end;
+  end;
+
+  // Если все попытки неудачны - просто очищаем изображение
+  if not LoadSuccess then
+    Image.Picture := nil;
+end;
+
+procedure TSGLMainForm.StartImageLoadThread(ItemIndex, RealIndex: Integer);
+begin
+  // ===== ЗАПУСКАЕМ ПОТОК ДЛЯ ЗАГРУЗКИ ИЗОБРАЖЕНИЙ =====
+  FImageLoadLock.Enter;
+  try
+    // Отменяем предыдущую загрузку
+    FImageLoadCancel := True;
+
+    // Устанавливаем новые параметры
+    FImageLoadPending := True;
+    FImageLoadGameIndex := RealIndex;
+    FImageLoadItemIndex := ItemIndex;
+    FImageLoadCancel := False;
+  finally
+    FImageLoadLock.Leave;
+  end;
+
+  // Если поток ещё не создан или завершён - создаём новый
+  if (FImageLoadThread = nil) or FImageLoadThread.Finished then
+  begin
+    FImageLoadThread := TThread.CreateAnonymousThread(
+      procedure
+      var
+        LocalGameIndex: Integer;
+        LocalItemIndex: Integer;
+        LocalPlatform: string;
+        LocalGameName: string;
+        LocalReleaseDate: string;
+        LocalID: string;
+        LocalForceName: string;
+        LocalImgList: TStringList;
+        LocalCancel: Boolean;
+        LocalClosing: Boolean;
+      begin
+        while not TThread.CurrentThread.CheckTerminated do
+        begin
+          // Копируем данные под защитой
+          FImageLoadLock.Enter;
+          try
+            if not FImageLoadPending or FClosing then
+            begin
+              FImageLoadLock.Leave;
+              Break;
+            end;
+
+            LocalGameIndex := FImageLoadGameIndex;
+            LocalItemIndex := FImageLoadItemIndex;
+            LocalPlatform := FGameData[LocalGameIndex].Platforms;
+            LocalGameName := FGameData[LocalGameIndex].GameName;
+            LocalReleaseDate := FGameData[LocalGameIndex].ReleaseDate;
+            LocalID := FGameData[LocalGameIndex].ID;
+
+            // Получаем форсированное имя
+            if NConfig.ValueExists(LocalPlatform, LocalID) then
+              LocalForceName := NConfig.ReadString(LocalPlatform, LocalID, '')
+            else
+              LocalForceName := '';
+
+            FImageLoadPending := False;
+            LocalCancel := FImageLoadCancel;
+            LocalClosing := FClosing;
+          finally
+            FImageLoadLock.Leave;
+          end;
+
+          if LocalCancel or LocalClosing then
+            Break;
+
+          // Создаём локальный список изображений
+          LocalImgList := TStringList.Create;
+          try
+            LocalImgList.Duplicates := dupIgnore;
+            LocalImgList.CaseSensitive := False;
+
+            // Загружаем список изображений (тяжёлая операция)
+            FindGameImages(LocalPlatform, LocalGameName,
+                          LocalReleaseDate, LocalID, LocalForceName,
+                          LocalImgList);
+
+            if TThread.CurrentThread.CheckTerminated or FClosing then
+              Break;
+
+            // Возвращаем результат в главный поток
+            TThread.Queue(nil,
+              procedure
+              begin
+                if not FClosing and (ListView1.ItemIndex = LocalItemIndex) then
+                begin
+                  // Очищаем старый список и загружаем новый
+                  ImgList.Clear;
+                  ImgList.Assign(LocalImgList);
+
+                  // Показываем первое изображение
+                  if ImgList.Count > 0 then
+                  begin
+                    try
+                      LoadImageWithRetry(ImgList[0], ScreenShotImage);
+                      ImgCurIndex := 0;
+                    except
+                      // Игнорируем ошибки загрузки
+                    end;
+
+                    NextImgBtn.Enabled := ImgList.Count > 1;
+                    PrevImgBtn.Enabled := ImgList.Count > 1;
+                  end;
+                end;
+
+                // Освобождаем локальный список в главном потоке
+                LocalImgList.Free;
+              end
+            );
+
+          except
+            LocalImgList.Free;
+          end;
+
+          // Небольшая пауза, чтобы не грузить процессор
+          Sleep(100);
+        end;
+      end
+    );
+
+    FImageLoadThread.FreeOnTerminate := False;
+    FImageLoadThread.Start;
+  end;
+end;
+
+procedure TSGLMainForm.FindGameImages(const Platforms, GameName, ReleaseDate, ID, ForcedName: string; ImageList: TStringList);
+var
+  PlatformDir: string;                 // Папка платформы LaunchBox (например Images\PC)
+  Year: string;                        // Год игры
+  BaseNameNoYear: string;              // Имя игры без года
+  BaseNameWithYear: string;            // Имя игры + (год)
+  BaseNameWithYearNoSpace: string;     // Имя игры +(год) без пробела
+  PriorityFolders: TArray<string>;     // Приоритетные папки поиска
+  Folder: string;
+  Files: TStringDynArray;
+  FilePath, FileName: string;
+
+  function OneLine(const s: string): string;
+  const
+    BadChars1     = ':"''/\<>|?*[]''';  // Старые, критические — заменяем первыми
+    //BadChars2     = '?:';         // Новые дополнительные символы (добавьте свои)
+  var
+    i: Integer;
+  begin
+   Result := s;
+
+   // Сначала заменяем старые запрещённые символы
+   for i := 1 to Length(BadChars1) do
+     Result := StringReplace(Result, BadChars1[i], '_', [rfReplaceAll]);
+
+   // Потом — новые дополнительные
+   {for i := 1 to Length(BadChars2) do
+     Result := StringReplace(Result, BadChars2[i], '_', [rfReplaceAll]);}
+
+   Result := StringReplace(Result, Char($00B3), '#U00b3', [rfReplaceAll]);
+   Result := StringReplace(Result, Char($00E9), 'e', [rfReplaceAll]);
+   Result := StringReplace(Result, Char($00E0), 'a', [rfReplaceAll]);
+   Result := StringReplace(Result, Char($00FF), 'y', [rfReplaceAll]);
+   {for i := 1 to Length(Result) do
+    if Result[i] in ['?', ':'] then Result[i] := '_';}
+  end;
+
+  function IsValidMatch(const FileName, BaseName: string): Boolean;
+  var
+    NextChar: Char;
+  begin
+    // Точное совпадение
+    if SameText(FileName, BaseName) then
+      Exit(True);
+
+    // Совпадение с дефисом и номером (например, Caesar-00)
+    if StartsText(BaseName + '-', FileName) then
+      Exit(True);
+
+    // Совпадение с годом в скобках (например, Caesar(1998))
+    if StartsText(BaseName + '(', FileName) then
+      Exit(True);
+
+    // Совпадение с годом и пробелом (например, Caesar (1998))
+    if StartsText(BaseName + ' (', FileName) then
+      Exit(True);
+
+    // Если имя файла длиннее базового имени
+    if Length(FileName) > Length(BaseName) then
+    begin
+      // Проверяем, что начинается с BaseName
+      if StartsText(BaseName, FileName) then
+      begin
+        NextChar := FileName[Length(BaseName) + 1];
+        // Следующий символ НЕ должен быть буквой или цифрой
+        // (это означало бы продолжение имени, как в "Caesar II")
+        if CharInSet(NextChar, ['A'..'Z', 'a'..'z', '0'..'9']) then
+          Exit(False);
+      end;
+    end;
+
+    Result := False;
+  end;
+
+  function MatchForcedNumberedName(const FileName, ForcedName: string): Boolean;
+  var
+    i: Integer;
+    Num: string;
+  begin
+    for i := 0 to 20 do
+    begin
+      Num := Format('%.2d', [i]); // 00 .. 20
+      if SameText(FileName, ForcedName + '-' + Num) then
+        Exit(True);
+    end;
+    Result := False;
+  end;
+
+  procedure TryAddFromFolder(const BaseFolder: string);
+  var
+    SearchPath: string;
+    j: Integer;
+  begin
+    SearchPath := IncludeTrailingPathDelimiter(PlatformDir) + BaseFolder;
+    if not TDirectory.Exists(SearchPath) then Exit;
+
+    Files := TDirectory.GetFiles(SearchPath, '*.*', TSearchOption.soAllDirectories);
+
+    for j := 0 to High(Files) do
+    begin
+      if TThread.CurrentThread.CheckTerminated then Exit;
+
+      FilePath := Files[j];
+      FileName := OneLine(TPath.GetFileNameWithoutExtension(FilePath));
+
+      if ForcedName <> '' then
+      begin
+        if SameText(FileName, ForcedName) or
+           StartsText(ForcedName + '-', FileName) then
+        begin
+          ImageList.Add(FilePath);
+        end;
+      end
+      else
+      begin
+        if IsValidMatch(FileName, BaseNameNoYear) or
+           ((BaseNameWithYear <> '') and IsValidMatch(FileName, BaseNameWithYear)) or
+           ((BaseNameWithYearNoSpace <> '') and IsValidMatch(FileName, BaseNameWithYearNoSpace)) then
+        begin
+          ImageList.Add(FilePath);
+        end;
+      end;
+    end;
+  end;
+
+begin
+  // очищаем список результатов
+  ImageList.Clear;
+
+  // путь к папке платформы
+  PlatformDir := IncludeTrailingPathDelimiter(LaunchBoxDir) +
+                 'Images\' + Platforms;
+
+  // если папка платформы не существует — выход
+  if not TDirectory.Exists(PlatformDir) then Exit;
+
+  // получаем год из даты релиза
+  Year := GetYear(ReleaseDate);
+
+  // базовое имя игры
+  BaseNameNoYear := OneLine(GameName);
+
+  BaseNameWithYear := '';
+  BaseNameWithYearNoSpace := '';
+
+  // формируем варианты имени с годом
+  if Year <> '' then
+  begin
+    BaseNameWithYear := OneLine(GameName + ' (' + Year + ')');
+    BaseNameWithYearNoSpace := OneLine(GameName + '(' + Year + ')');
+  end;
+
+  // -------------------------------------------------
+  // ПРИОРИТЕТНЫЕ ПАПКИ LaunchBox
+  // -------------------------------------------------
+  PriorityFolders := [
+    'Screenshot - Gameplay',
+    'Screenshot - Game Title',
+    'Disc',
+    'Box - Front',
+    'Box - Back'
+  ];
+
+  // Сначала ищем только в этих папках
+  for Folder in PriorityFolders do
+    TryAddFromFolder(Folder);
+
+  // -------------------------------------------------
+  // Если нашли мало изображений — ищем везде
+  // -------------------------------------------------
+  if ImageList.Count < 2 then
+  begin
+    var AllFiles := TDirectory.GetFiles(
+      PlatformDir,'*.*',TSearchOption.soAllDirectories);
+
+    for FilePath in AllFiles do
+    begin
+      if TThread.CurrentThread.CheckTerminated then Exit;
+
+      // пропускаем уже обработанные папки
+      var InPriority := False;
+
+      for Folder in PriorityFolders do
+        if Pos(IncludeTrailingPathDelimiter(Folder),FilePath) > 0 then
+        begin
+          InPriority := True;
+          Break;
+        end;
+
+      if InPriority then Continue;
+
+      FileName := OneLine(TPath.GetFileNameWithoutExtension(FilePath));
+
+      if ForcedName <> '' then
+      begin
+        if SameText(FileName, ForcedName) or
+           StartsText(ForcedName + '-', FileName) or
+           MatchForcedNumberedName(FileName, ForcedName) then
+          ImageList.Add(FilePath);
+      end
+      else
+      begin
+        if IsValidMatch(FileName, BaseNameNoYear) or
+           ((BaseNameWithYear <> '') and IsValidMatch(BaseNameWithYear, FileName)) or
+           ((BaseNameWithYearNoSpace <> '') and IsValidMatch(BaseNameWithYearNoSpace, FileName)) then
+          ImageList.Add(FilePath);
+      end;
+    end;
+  end;
+
+  // -------------------------------------------------
+  // Если ничего не нашли — ищем по GUID (ID игры)
+  // -------------------------------------------------
+  if (ImageList.Count = 0) and (ID <> '') then
+  begin
+    BaseNameNoYear := OneLine(ID);
+
+    BaseNameWithYear := '';
+    BaseNameWithYearNoSpace := '';
+
+    for Folder in PriorityFolders do
+      TryAddFromFolder(Folder);
+  end;
+
+end;
+
+procedure TSGLMainForm.LoadXMLToArray(const XMLFileName: string);
 var
   XML: IXMLDocument;
   Nodes: IXMLNodeList;
@@ -1307,7 +1308,7 @@ begin
         case IndexStr(NodeName, ['Title', 'ApplicationPath', 'Platform',
                                   'Developer', 'Publisher', 'Genre', 'Series',
                                   'ReleaseDate', 'Notes', 'ManualPath',
-                                  'ConfigurationPath', 'RootFolder']) of
+                                  'ConfigurationPath', 'RootFolder', 'ID']) of
           0: G.GameName := Child.Text;
           1: G.ApplicationPath := Child.Text;
           2: G.Platforms := Child.Text;
@@ -1320,6 +1321,7 @@ begin
           9: G.Manual := Child.Text;
           10: G.ConfigurationPath := Child.Text;
           11: G.RootFolder := Child.Text;
+          12: G.ID := Child.Text;
         end;
       end;
 
@@ -1330,7 +1332,7 @@ begin
   end;
 end;
 
-procedure TMainForm.ScanXMLFromDir(const Dir: string);
+procedure TSGLMainForm.ScanXMLFromDir(const Dir: string);
 var
   Files: TStringDynArray;
   I: Integer;
@@ -1373,116 +1375,140 @@ begin
     FFilteredIndices[I] := I;
 end;
 
-procedure TMainForm.FreeImageCache;
+//-----------------------------------------------------------------------------
+
+procedure UpdateToolbarMenuChecks;
+// Checked in INI ToolBar align for menu
 var
-  sl: TStringList;
+  I: Integer;
+  Root: TMenuItem;
+  AlignName: string;
 begin
-  if Assigned(FImageCache) then
+ with SGLMainForm do
+ begin
+  // родительский пункт меню (где 4 позиции)
+  Root := ToolBarTop1.Parent;
+
+  AlignName :=
+    GetEnumName(TypeInfo(TAlign), Ord(ToolBar1.Align));
+
+  for I := 0 to Root.Count - 1 do
   begin
-    for sl in FImageCache.Values do
-      sl.Free;
-    FImageCache.Free;
-    FImageCache := nil;
+    Root.Items[I].Checked :=
+      SameText(Root.Items[I].Hint, AlignName);
   end;
+ end;
 end;
 
-procedure TMainForm.BuildImageCache;
-var
-  PlatformsDir, ImagesRoot: string;
-  Platforms: TStringDynArray;
-  Platform: string;
-  FileList: TStringList;
-  Folders: TArray<string>;
-  Folder: string;
-  Files: TStringDynArray;
-  FullPath: string;
+procedure TSGLMainForm.WMCopyData(var Msg: TWMCopyData);
+//Нужно для показа формы если нажать на exe снова
 begin
-  if FCacheBuilt then Exit;
+  // если скрыта
+  if not IsWindowVisible(Handle) then
+    Show;
 
-  FImageCache := TDictionary<string, TStringList>.Create;
-  ImagesRoot := IncludeTrailingPathDelimiter(LaunchBoxDir) + 'Images\';
+  // если свернута
+  if IsIconic(Handle) then
+    ShowWindow(Handle, SW_RESTORE);
 
-  // Можно взять платформы из TabControl или из папок
-  Platforms := TDirectory.GetDirectories(ImagesRoot);
+  ShowWindow(Handle, SW_SHOW);
 
-  Folders := [
-    'Screenshot - Gameplay',
-    'Screenshot - Game Title',
-    'Disc',
-    'Box - Front',
-    'Box - Back'
-  // + другие папки, если используешь
-  ];
+  // Обход Windows focus protection
+  SetWindowPos(Handle, HWND_TOPMOST, 0,0,0,0,
+    SWP_NOMOVE or SWP_NOSIZE);
 
-  //Caption := 'Building image cache...';
-  //Application.ProcessMessages;
+  SetWindowPos(Handle, HWND_NOTOPMOST, 0,0,0,0,
+    SWP_NOMOVE or SWP_NOSIZE);
 
-  try
-    for var PlatDir in Platforms do
+  SetForegroundWindow(Handle);
+  BringWindowToTop(Handle);
+  SetActiveWindow(Handle);
+
+  Msg.Result := 1;
+end;
+
+procedure TSGLMainForm.StyleMenuClick(Sender: TObject);
+//Нажатие на меню для скинов
+var
+  I: Integer;
+  Root: TMenuItem;
+  CurrentStyleName: string;
+begin
+  if not (Sender is TMenuItem) then Exit;
+
+  Root := TMenuItem(Sender).Parent;
+
+  // Снимаем все галочки
+  for I := 0 to Root.Count - 1 do
+    Root.Items[I].Checked := False;
+
+  TMenuItem(Sender).Checked := True;
+
+  // Применяем выбранный стиль
+  if TMenuItem(Sender).Tag = -1 then
+    TStyleManager.SetStyle('Windows')
+  else
+    TStyleManager.TrySetStyle(TMenuItem(Sender).Hint);
+
+  CurrentStyleName := TStyleManager.ActiveStyle.Name;
+
+  FConfig.WriteString('SGAllSettings', 'Styles', CurrentStyleName);
+  FConfig.UpdateFile;
+end;
+
+procedure StylesLoad();
+var
+  SavedStyle: string;
+  ActiveStyleName: string;
+  i: Integer;
+begin
+ with SGLMainForm do
+ begin
+  // Загружаем сохранённый стиль
+  SavedStyle := FConfig.ReadString('SGAllSettings', 'Styles', 'Windows');
+
+  // Проверка если есть такой стиль
+  if (SavedStyle <> '') and (TStyleManager.Style[SavedStyle] = nil) then
+      SavedStyle := 'Windows';
+
+  // Пытаемся применить стиль
+  if not TStyleManager.TrySetStyle(SavedStyle, False) then
+   begin
+     TStyleManager.SetStyle('Windows');
+     SavedStyle := 'Windows';
+   end;
+
+  // Берём **реальное** имя стиля, которое применилось
+  ActiveStyleName := TStyleManager.ActiveStyle.Name;
+
+  // Снимаем все галочки
+  for i := 0 to StyleMenu1.Count - 1 do
+    StyleMenu1.Items[i].Checked := False;
+
+  // Ставим галочку по реальному имени
+  for i := 0 to StyleMenu1.Count - 1 do
     begin
-      Platform := ExtractFileName(PlatDir);
-      if not TDirectory.Exists(PlatDir) then Continue;
-
-      FileList := TStringList.Create;
-      FileList.Sorted := True;        // полезно для быстрого поиска
-      FileList.Duplicates := dupIgnore;
-
-      for Folder in Folders do
+      if SameText(StyleMenu1.Items[i].Hint, ActiveStyleName) then
       begin
-        var SearchPath := IncludeTrailingPathDelimiter(PlatDir) + Folder;
-        if not TDirectory.Exists(SearchPath) then Continue;
-
-        Files := TDirectory.GetFiles(SearchPath, '*.*', TSearchOption.soAllDirectories);
-        for FullPath in Files do
-          FileList.Add(FullPath);
+        StyleMenu1.Items[i].Checked := True;
+        Exit;  // нашли → выходим
       end;
-
-      // Если нашли файлы — сохраняем
-      if FileList.Count > 0 then
-        FImageCache.Add(Platform, FileList)
-      else
-        FileList.Free;
     end;
 
-    FCacheBuilt := True;
-  finally
-    //Caption := 'Total Games: ' + IntToStr(Length(FGameData));
-  end;
-end;
-
-procedure TMainForm.RunCacheImages;
-begin
-  // Запускаем кэш с небольшой задержкой
-  TThread.CreateAnonymousThread(
-    procedure
-    var
-      CacheThread: TThread;
-    begin
-      try
-        Sleep(1500);  // или 2000, если хотите ещё больше надёжности
-
-        if TThread.CheckTerminated or FClosing then Exit;
-
-        // Дополнительная защита
-        if not Assigned(MainForm) or (MainForm = nil) then Exit;
-
-        FinalizeLoading;
-        BuildImageCache;
-
-      except
-        on E: Exception do
-        begin
-          // Можно логировать в файл, но НЕ пытаться показывать MessageBox из фона!
-          // TThread.Queue(nil, procedure begin ShowMessage(E.Message); end); ← НЕ делать так
-        end;
+  // Если ничего не нашли по Hint → ищем "Windows" по Tag
+  if SameText(ActiveStyleName, 'Windows') then
+    for i := 0 to StyleMenu1.Count - 1 do
+     if StyleMenu1.Items[i].Tag = -1 then
+      begin
+       StyleMenu1.Items[i].Checked := True;
+       Break;
       end;
-    end
-  ).Start;
+ end;
 end;
 
 //----CONFIG----
 //------------------------------------------------------------------------------
-function TMainForm.GetFConfig: TMemIniFile;
+function TSGLMainForm.GetFConfig: TMemIniFile;
 var
  AppName: String;
 begin
@@ -1493,7 +1519,7 @@ begin
   Result := FConfig;
 end;
 
-function TMainForm.GetNConfig: TMemIniFile;
+function TSGLMainForm.GetNConfig: TMemIniFile;
 var
  AppName: String;
 begin
@@ -1504,7 +1530,9 @@ begin
   Result := NConfig;
 end;
 
-procedure TMainForm.RegIni(Write: Boolean);
+procedure TSGLMainForm.RegIni(Write: Boolean);
+var
+ s: String;
 begin
 if Write = true then
  begin
@@ -1523,6 +1551,11 @@ if Write = true then
      FConfig.WriteString('SGAllSettings', 'IgnoreDir', '');
   FConfig.WriteInteger('SGAllSettings', 'ListViewWidth', Panel3.Width);
   FConfig.WriteInteger('SGAllSettings', 'InfoPanelHeight', ScrollBox1.Height);
+  FConfig.WriteBool('SGAllSettings', 'ShowToolBar', ToolBar1.Visible);
+  FConfig.WriteString('SGAllSettings', 'ToolBarPosition', GetEnumName(TypeInfo(TAlign), Ord(ToolBar1.Align)));
+  FConfig.WriteString('SGAllSettings', 'Styles', TStyleManager.ActiveStyle.Name);
+  if TabControl1.Tabs.Count > 0 then
+  FConfig.WriteString('SGAllSettings', 'LastTab', TabControl1.Tabs[TabControl1.TabIndex]);
   FConfig.UpdateFile;
  end else
  begin
@@ -1541,14 +1574,29 @@ if Write = true then
   Hideonstartup1.Checked := FConfig.ReadBool('SGAllSettings', 'HideInTray', False);
   if FConfig.ReadBool('SGAllSettings', 'HideInTray', False) then
   Show1.Caption := 'Show' else Show1.Caption := 'Hide';
-  Panel3.Width := FConfig.ReadInteger('SGAllSettings', 'ListViewWidth', MainForm.Width div 3);
+  Panel3.Width := FConfig.ReadInteger('SGAllSettings', 'ListViewWidth', SGLMainForm.Width div 3);
   ScrollBox1.Height := FConfig.ReadInteger('SGAllSettings', 'InfoPanelHeight', ScrollBox1.Height);
+  if FConfig.ReadBool('SGAllSettings', 'ShowToolBar', False) then
+   begin
+    ToolBar1.Visible := True;
+    ShowToolBar.Checked := True;
+   end else
+   begin
+    ToolBar1.Visible := False;
+    ShowToolBar.Checked := False;
+   end;
+  //ToolBar
+  s := FConfig.ReadString('SGAllSettings', 'ToolBarPosition', 'alTop');
+  ToolBar1.Align := TAlign(GetEnumValue(TypeInfo(TAlign), s));
+  UpdateToolbarMenuChecks;
+  //---------------------------------------------------------------------------
+  Autostart1.Checked := IsInStartupFolder;
  end;
 end;
 
 //----FORM----
 //------------------------------------------------------------------------------
-procedure TMainForm.FormCloseQuery(Sender: TObject; var CanClose: Boolean);
+procedure TSGLMainForm.FormCloseQuery(Sender: TObject; var CanClose: Boolean);
 const
   THREAD_TIMEOUT_MS = 5000;  // 5 секунд — достаточно для загрузки XML
 var
@@ -1575,12 +1623,19 @@ begin
     FreeAndNil(FLoaderThread);
   end;
 
+  // Для потоковой загрузки изображений
+  if Assigned(FImageLoadThread) and not FImageLoadThread.Finished then
+  begin
+    FImageLoadThread.Terminate;                 // сигнализируем потоку выйти
+    WaitResult := FImageLoadThread.WaitFor;     // ждём
+    FreeAndNil(FImageLoadThread);
+  end;
+
   CanClose := True;
 
   // Освобождение ресурсов
-  if Assigned(TempWIC) then FreeAndNil(TempWIC);
   if Assigned(ImgList) then FreeAndNil(ImgList);
-  FreeImageCache;
+  if Assigned(FIgnoredFolders) then FreeAndNil(FIgnoredFolders);
 
   RegIni(True);
 
@@ -1588,25 +1643,49 @@ begin
   if Assigned(NConfig) then FreeAndNil(NConfig);
 end;
 
-procedure TMainForm.FormCreate(Sender: TObject);
+procedure TSGLMainForm.FormCreate(Sender: TObject);
 begin
-  TempWIC := TWICImage.Create;
+  FMsgShow := RegisterWindowMessage('StartGameLauncher_ShowMessage_Unique_String'); //Для Mutex
+
+  // Инициализация для потоковой загрузки изображений
+  FImageLoadLock := TCriticalSection.Create;
+  FImageLoadPending := False;
+  FImageLoadCancel := False;
+  //-------------------------------------------------
+
   ImgList := TStringList.Create;
+  ImgList.Duplicates := dupIgnore;
+  ImgList.CaseSensitive := False;
 
   LaunchBoxDir := 'E:\LaunchBox'{GetExecPath};
   GetFConfig;
   GetNConfig;
   RegIni(False);
 
-  MainForm.Icon := LoadIconFromRCDATA('OnLoadIcon');
+  FIgnoredFolders := TStringList.Create;
+  FIgnoredFolders.CaseSensitive := False;
+  StrToList(IgnoreDir, ';', FIgnoredFolders);
+
+  SGLMainForm.Icon := LoadIconFromRCDATA('OnLoadIcon');
   TrayIcon.Icon := LoadIconFromRCDATA('OnLoadIcon');
   TrayIcon.Visible := True;
   Application.ShowMainForm := not FConfig.ReadBool('SGAllSettings', 'HideInTray', False);
 
-  RunCacheImages;
+  //ToolBar
+  with ToolBtnPropertiesForm do
+   begin
+    LoadToolButtons(ToolBar1, FConfig, ImageList1, ToolBar1Click);
+    AddItemToButtonPopup(ToolBar1, FConfig, Self, ToolBarMenuClick);
+   end;
+
+  //Создание список стиль
+  BuildStylesMenu(StyleMenu1, StyleMenuClick);
+  StylesLoad();
+
+  FinalizeLoading;
 end;
 
-procedure TMainForm.FormKeyDown(Sender: TObject; var Key: Word;
+procedure TSGLMainForm.FormKeyDown(Sender: TObject; var Key: Word;
   Shift: TShiftState);
 begin
  if Key = ORD(VK_F1) then About1Click(Sender);
@@ -1632,7 +1711,7 @@ begin
    end;
 end;
 
-procedure TMainForm.FormResize(Sender: TObject);
+procedure TSGLMainForm.FormResize(Sender: TObject);
 begin
   ListView1.Column[0].Width := ListView1.Width - 20;
   Edit1.Width := Panel4.Width div 2 - 6;
@@ -1644,7 +1723,7 @@ end;
 //----FORM COMPONENTS----
 //------------------------------------------------------------------------------
 
-procedure TMainForm.ListView1ContextPopup(Sender: TObject; MousePos: TPoint;
+procedure TSGLMainForm.ListView1ContextPopup(Sender: TObject; MousePos: TPoint;
   var Handled: Boolean);
 var
   Item: TListItem;
@@ -1656,7 +1735,7 @@ begin
     Handled := False; // Показывать меню на элементе
 end;
 
-procedure TMainForm.ListView1Data(Sender: TObject; Item: TListItem);
+procedure TSGLMainForm.ListView1Data(Sender: TObject; Item: TListItem);
 var
   G: TGameData;
   RealIndex: Integer;
@@ -1682,23 +1761,24 @@ begin
   Item.SubItems.Add(G.Manual);
   Item.SubItems.Add(G.ConfigurationPath);
   Item.SubItems.Add(G.RootFolder);
+  Item.SubItems.Add(G.ID);
 end;
 
-procedure TMainForm.ListView1DblClick(Sender: TObject);
+procedure TSGLMainForm.ListView1DblClick(Sender: TObject);
 begin
  if ListView1.ItemIndex = -1 then Exit;
   ShellOpen(LaunchBoxDir + '\' + ListView1.Selected.SubItems[0]);
 end;
 
-procedure TMainForm.ListView1KeyDown(Sender: TObject; var Key: Word;
+procedure TSGLMainForm.ListView1KeyDown(Sender: TObject; var Key: Word;
   Shift: TShiftState);
 begin
-if Key = ORD(VK_RETURN) then ListView1DblClick(Sender);
-if Key = ORD(VK_LEFT) then PrevImgBtnClick(Sender);
-if Key = ORD(VK_RIGHT) then NextImgBtnClick(Sender);
+if Key = VK_RETURN then ListView1DblClick(Sender);
+if Key = VK_LEFT then PrevImgBtnClick(Sender);
+if Key = VK_RIGHT then NextImgBtnClick(Sender);
 end;
 
-procedure TMainForm.ListView1KeyPress(Sender: TObject; var Key: Char);
+procedure TSGLMainForm.ListView1KeyPress(Sender: TObject; var Key: Char);
 const
   TYPE_TIMEOUT = 800; // мс
 var
@@ -1740,13 +1820,13 @@ begin
   Delete(FTypeBuffer, Length(FTypeBuffer), 1);
 end;
 
-procedure TMainForm.ListView1SelectItem(Sender: TObject; Item: TListItem; Selected: Boolean);
+procedure TSGLMainForm.ListView1SelectItem(Sender: TObject; Item: TListItem; Selected: Boolean);
 begin
  if Selected then
   ShowGameByIndex(Item.Index) else ClearGameInfo;
 end;
 
-procedure TMainForm.TabControl1Change(Sender: TObject);
+procedure TSGLMainForm.TabControl1Change(Sender: TObject);
 begin
   if not FLoadingComplete then Exit;
 
@@ -1769,7 +1849,7 @@ begin
   end;
 end;
 
-procedure TMainForm.TrayIconClick(Sender: TObject);
+procedure TSGLMainForm.TrayIconClick(Sender: TObject);
 begin
 if Visible then
   begin
@@ -1785,7 +1865,7 @@ if Visible then
   end;
 end;
 
-procedure TMainForm.ScreenShotImageClick(Sender: TObject);
+procedure TSGLMainForm.ScreenShotImageClick(Sender: TObject);
 begin
 if ListView1.ItemIndex = -1 then Exit;
 with FullScreenForm do
@@ -1797,18 +1877,27 @@ with FullScreenForm do
  end;
 end;
 
-procedure TMainForm.ComboBox1Change(Sender: TObject);
+procedure TSGLMainForm.ComboBox1Change(Sender: TObject);
 begin
   ApplyFilters;
 end;
 
-procedure TMainForm.Edit1Change(Sender: TObject);
+procedure TSGLMainForm.Edit1Change(Sender: TObject);
 begin
   FSearchText := Edit1.Text;
   ApplyFilters;
 end;
 
-procedure TMainForm.Hideonstartup1Click(Sender: TObject);
+procedure TSGLMainForm.Autostart1Click(Sender: TObject);
+begin
+with Sender as TMenuItem do
+   begin
+    Checked := not Checked;
+    ToggleSelfInStartupFolder(Checked);
+   end;
+end;
+
+procedure TSGLMainForm.Hideonstartup1Click(Sender: TObject);
 begin
   with Sender as TMenuItem do
    begin
@@ -1818,27 +1907,43 @@ begin
    end;
 end;
 
-procedure TMainForm.Specifyfolder1Click(Sender: TObject);
+procedure TSGLMainForm.ShowToolBarClick(Sender: TObject);
+begin
+with Sender as TMenuItem do
+   begin
+    Checked := not Checked;
+    ToolBar1.Visible := Checked;
+    FConfig.WriteBool('SGAllSettings', 'ShowToolBar', Checked);
+    FConfig.UpdateFile;
+   end;
+end;
+
+procedure TSGLMainForm.Specifyfolder1Click(Sender: TObject);
 begin
   with DiagForm do
    begin
     Caption := 'Specify folder';
     Position := poDesktopCenter;
     ActiveControl := Edit1;
-    Label2.Caption := 'You must restart the application for the changes to take effect.';
+    Label2.Caption := 'Changes will take effect after switching tabs.';
     Button3.Hint := 'Select a dir';
     ifFile := False;
     Edit1.Text := FConfig.ReadString('SGAllSettings', 'IgnoreDir', '');
-    DialogDir := LaunchBoxDir + '\eXo\';
+    DialogDir := LaunchBoxDir;
      if (Showmodal <> mrCancel) then
       begin
        FConfig.WriteString('SGAllSettings', 'IgnoreDir', Edit1.Text);
        FConfig.UpdateFile;
+       IgnoreDir := Edit1.Text;
+
+       // Обновляем кэшированный список:
+       FIgnoredFolders.Clear;
+       StrToList(IgnoreDir, ';', FIgnoredFolders);
       end;
    end;
 end;
 
-procedure TMainForm.About1Click(Sender: TObject);
+procedure TSGLMainForm.About1Click(Sender: TObject);
 begin
 with HelpForm do
    begin
@@ -1849,12 +1954,12 @@ with HelpForm do
    end;
 end;
 
-procedure TMainForm.Exit1Click(Sender: TObject);
+procedure TSGLMainForm.Exit1Click(Sender: TObject);
 begin
   Close;
 end;
 
-procedure TMainForm.OnExtrasMenuItemClick(Sender: TObject);
+procedure TSGLMainForm.OnExtrasMenuItemClick(Sender: TObject);
 var
   MenuItem: TMenuItem;
   FullPath: string;
@@ -1863,81 +1968,62 @@ begin
   begin
     MenuItem := TMenuItem(Sender);
     FullPath := MenuItem.Hint;
-
-    if FileExists(FullPath) then
-    begin
-      ShellExecute(0, 'open', PChar(FullPath), nil,
-                   PChar(ExtractFilePath(FullPath)), SW_SHOWNORMAL);
-    end
-    else
-    begin
-      ShowMessage('File not found: ' + FullPath);
-    end;
+    ShellOpen(FullPath);
   end;
 end;
 
-procedure TMainForm.Run1Click(Sender: TObject);
+procedure TSGLMainForm.Run1Click(Sender: TObject);
 begin
   ListView1DblClick(Sender);
 end;
 
-procedure TMainForm.Configuration1Click(Sender: TObject);
+procedure TSGLMainForm.Configuration1Click(Sender: TObject);
+begin
+ if ListView1.ItemIndex <> -1 then
+    ShellOpen(LaunchBoxDir +'\'+ListView1.Selected.SubItems[9]);
+end;
+
+procedure TSGLMainForm.Manual1Click(Sender: TObject);
 var
   PathGame: String;
 begin
  if ListView1.ItemIndex <> -1 then
-  begin
-   PathGame := LaunchBoxDir +'\'+ListView1.Selected.SubItems[9];
-   ShellExecute(0, 'open', PChar(PathGame), nil,
-                   PChar(ExtractFilePath(PathGame)), SW_SHOWNORMAL);
-  end;
+    ShellOpen(LaunchBoxDir +'\'+ListView1.Selected.SubItems[8]);
 end;
 
-procedure TMainForm.Manual1Click(Sender: TObject);
-var
-  PathGame: String;
-begin
- if ListView1.ItemIndex <> -1 then
-  begin
-   PathGame := LaunchBoxDir +'\'+ListView1.Selected.SubItems[8];
-   ShellExecute(0, 'open', PChar(PathGame), nil,
-                   PChar(ExtractFilePath(PathGame)), SW_SHOWNORMAL);
-  end;
-end;
-
-procedure TMainForm.Customimagename1Click(Sender: TObject);
+procedure TSGLMainForm.Customimagename1Click(Sender: TObject);
 begin
   with DiagForm do
    begin
-    Caption := ListView1.Items[ListView1.ItemIndex].Caption;
+    Caption := ListView1.Selected.Caption;
     Position := poDesktopCenter;
     ActiveControl := Edit1;
     Label2.Caption := 'Example: Tomb Raider Gold-01.jpg > Tomb Raider Gold';
     Button3.Hint := 'Select an image';
     ifFile := True;
-    Edit1.Text := NConfig.ReadString(ListView1.Items[ListView1.ItemIndex].SubItems[1],
-      ListView1.Items[ListView1.ItemIndex].Caption, '');
-    DialogDir := LaunchBoxDir + '\Images\' + ListView1.Items[ListView1.ItemIndex].SubItems[1];
+    Edit1.Text := NConfig.ReadString(ListView1.Selected.SubItems[1],
+      ListView1.Selected.SubItems[11], '');
+    DialogDir := LaunchBoxDir + '\Images\' + ListView1.Selected.SubItems[1];
      if (Showmodal <> mrCancel) then
       begin
        if Edit1.Text = '' then
-       NConfig.DeleteKey(ListView1.Items[ListView1.ItemIndex].SubItems[1],
-         ListView1.Items[ListView1.ItemIndex].Caption)
+       NConfig.DeleteKey(ListView1.Selected.SubItems[1],
+         ListView1.Selected.SubItems[11])
        else
-       NConfig.WriteString(ListView1.Items[ListView1.ItemIndex].SubItems[1],
-         ListView1.Items[ListView1.ItemIndex].Caption, Edit1.Text);
+       NConfig.WriteString(ListView1.Selected.SubItems[1],
+         ListView1.Selected.SubItems[11], Edit1.Text);
        NConfig.UpdateFile;
       end;
    end;
 end;
 
-procedure TMainForm.DesktopShortcut1Click(Sender: TObject);
+procedure TSGLMainForm.DesktopShortcut1Click(Sender: TObject);
 begin
   CreateDesktopShellLink(LaunchBoxDir +'\'+ ListView1.Selected.SubItems[0],
     ListView1.Selected.Caption);
 end;
 
-procedure TMainForm.PrevImgBtnClick(Sender: TObject);
+procedure TSGLMainForm.PrevImgBtnClick(Sender: TObject);
 begin
   if ImgList.Count = 0 then Exit;
 
@@ -1946,17 +2032,88 @@ begin
   if ImgCurIndex < 0 then
     ImgCurIndex := ImgList.Count - 1;
 
-  TempWIC.LoadFromFile(ImgList[ImgCurIndex]);
-  ScreenShotImage.Picture.Assign(TempWIC);
+  LoadImageWithRetry(ImgList[ImgCurIndex], ScreenShotImage);
 end;
 
-procedure TMainForm.NextImgBtnClick(Sender: TObject);
+procedure TSGLMainForm.NextImgBtnClick(Sender: TObject);
 begin
   if ImgList.Count = 0 then Exit;
 
   ImgCurIndex := (ImgCurIndex + 1) mod ImgList.Count;
-  TempWIC.LoadFromFile(ImgList[ImgCurIndex]);
-  ScreenShotImage.Picture.Assign(TempWIC);
+
+  LoadImageWithRetry(ImgList[ImgCurIndex], ScreenShotImage);
+end;
+
+procedure TSGLMainForm.ToolBar1Click(Sender: TObject);
+var
+ TempList: TStringList;
+ WorkingDir: String;
+ IniValue: String;
+begin
+ if not (Sender is TToolButton) then Exit;
+
+ TempList := TStringList.Create;
+ try
+  // Читаем значение из INI
+  IniValue := FConfig.ReadString('ToolBar', TToolButton(Sender).Hint, '');
+
+  // Проверяем, что значение не пустое
+  if IniValue = '' then
+    Exit;
+
+  // Разбираем строку
+  StrToList(IniValue, '|', TempList);
+
+  // Проверяем минимальное количество элементов
+  if TempList.Count < 1 then
+    Exit;
+
+  // Определяем рабочую директорию
+  if (TempList.Count > 2) and (TempList[2] <> '') then
+    WorkingDir := TempList[2]
+  else
+    WorkingDir := ExtractFilePath(TempList[0]);
+
+  // Запускаем приложение
+  ShellExecute(0, 'open',
+               PChar(TempList[0]),  // Путь к файлу
+               PChar(IfThen(TempList.Count > 1, TempList[1], '')),  // Параметры
+               PChar(WorkingDir),   // Рабочая директория
+               SW_SHOWNORMAL);
+ finally
+  TempList.Free;
+ end;
+end;
+
+procedure TSGLMainForm.ToolBarTop1Click(Sender: TObject);
+var
+  I: Integer;
+  Root: TMenuItem;
+  AlignValue: Integer;
+begin
+  if not (Sender is TMenuItem) then Exit;
+
+  Root := TMenuItem(Sender).Parent;
+
+  // снимаем все галочки
+  for I := 0 to Root.Count - 1 do
+    Root.Items[I].Checked := False;
+
+  TMenuItem(Sender).Checked := True;
+
+  AlignValue :=
+    GetEnumValue(TypeInfo(TAlign), TMenuItem(Sender).Hint);
+
+  if AlignValue >= 0 then
+    ToolBar1.Align := TAlign(AlignValue);
+
+  case ToolBar1.Align of
+    alTop, alBottom:
+      ToolBar1.Height := 40;
+
+    alLeft, alRight:
+      ToolBar1.Width := 40;
+  end;
 end;
 
 end.

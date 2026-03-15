@@ -417,6 +417,10 @@ object SGLMainForm: TSGLMainForm
       object N6: TMenuItem
         Caption = '-'
       end
+      object Autostart1: TMenuItem
+        Caption = 'Autostart'
+        OnClick = Autostart1Click
+      end
       object StyleMenu1: TMenuItem
         Caption = 'Style'
       end

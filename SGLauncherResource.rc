@@ -1,1 +1,1 @@
-OnLoadIcon RCDATA "Icon2.ico"
+OnLoadIcon ICON "Icon2.ico"

@@ -14,7 +14,9 @@ uses
   FullScreenImage in 'FullScreenImage.pas' {FullScreenForm},
   DialogForm in 'DialogForm.pas' {DiagForm},
   Help in 'Help.pas' {HelpForm},
-  ToolBtnProperties in 'ToolBtnProperties.pas' {ToolBtnPropertiesForm};
+  ToolBtnProperties in 'ToolBtnProperties.pas' {ToolBtnPropertiesForm},
+  SystemUtils in 'SystemUtils.pas',
+  Snake in 'Snake.pas';
 
 {$R *.res}
 {$SETPEFLAGS IMAGE_FILE_RELOCS_STRIPPED} //Удаление из exe таблицы релокаций.
