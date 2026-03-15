@@ -1,5 +1,5 @@
 # Start Game Launcher
-Portable launcher for eXo collections.
+Launcher for eXo collections.
 
 
 <img width="1920" height="1032" alt="Screenshot 2026-02-08 153931" src="https://github.com/user-attachments/assets/77aec4a6-db92-4ab2-9a56-798553d417ee" />
