@@ -27,6 +27,8 @@ eXoWin3x=!win3x
 
 eXoWin9x=!win9x
 
+eXoIF=!IF
+
 eXoAppleIIGS=!appleiigs
 
 eXoDemoScene=!demoscn
