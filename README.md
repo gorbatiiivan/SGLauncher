@@ -19,12 +19,19 @@ For corectly showing installed games need to add specify name folders (located i
 Example: 
 
 eXoDos=!dos
-eXoWin3x=!win3x    
+
+eXoWin3x=!win3x 
+
 eXoWin9x=!win9x
+
 eXoIF=!IF
+
 eXoAppleIIGS=!appleiigs
+
 eXoDREAMM=!DREAMM
+
 eXoScummVM=!ScummVM
+
 eXoDemoScene=!demoscn
 
 !dos;!win3x;!win9x;!IF;!appleiigs;!DREAMM;!ScummVM;!demoscn
