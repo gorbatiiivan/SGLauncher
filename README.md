@@ -36,7 +36,8 @@ eXoDemoScene=!demoscn
 
 !dos;!win3x;!win9x;!IF;!appleiigs;!DREAMM;!ScummVM;!demoscn
 
-<img width="428" height="172" alt="02" src="https://github.com/user-attachments/assets/391d6e36-89d6-425d-9a3c-bc98fe1eee12" />
+<img width="428" height="172" alt="Screenshot 2026-03-28 142438" src="https://github.com/user-attachments/assets/b9eb1994-d1b6-4d9e-affd-844a925461aa" />
+
 
 ------------------------------------------------------------------------------------------------------
 
