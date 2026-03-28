@@ -10,10 +10,6 @@ Lightweight launcher for eXo collections.
 <img width="1920" height="1040" alt="Screenshot 2026-02-19 184426" src="https://github.com/user-attachments/assets/3d64311c-5070-4148-b81d-4d62138fbb79" />
 
 
-Not tested with languages pack.
-
-Should work with all LaunchBox collections.
-
 ------------------------------------------------------------------------------------------------------
 
 For corectly showing installed games need to add specify name folders (located in TrayMenu/Options/Specify folder).
@@ -46,5 +42,6 @@ eXoDemoScene=!demoscn
 
 No installation required, just move the SGLauncher folder to your LaunchBox folder.
 
+Not tested with languages pack.
 
 ------------------------------------------------------------------------------------------------------
