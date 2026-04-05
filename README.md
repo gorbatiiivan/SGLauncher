@@ -1,4 +1,4 @@
-# Start Game Launcher
+# STARt Game Launcher
 Lightweight launcher for eXo collections.
 
 
