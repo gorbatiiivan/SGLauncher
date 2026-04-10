@@ -25,7 +25,8 @@ For corectly showing language pack need to add specify name folders (located in 
 
 Example: 
 
-!german
+!german;!spanish
+
 etc...
 
 ------------------------------------------------------------------------------------------------------
