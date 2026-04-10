@@ -461,9 +461,13 @@ object SGLMainForm: TSGLMainForm
       object N5: TMenuItem
         Caption = '-'
       end
-      object Specifyfolder1: TMenuItem
-        Caption = 'Specify folder'
-        OnClick = Specifyfolder1Click
+      object Specifyfolders1: TMenuItem
+        Caption = 'Specify folders'
+        OnClick = Specifyfolders1Click
+      end
+      object Specifylanguagefolders1: TMenuItem
+        Caption = 'Specify language folders'
+        OnClick = Specifylanguagefolders1Click
       end
     end
     object N4: TMenuItem

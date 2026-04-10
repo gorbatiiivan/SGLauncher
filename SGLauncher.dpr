@@ -16,6 +16,7 @@ uses
   Help in 'Help.pas' {HelpForm},
   ToolBtnProperties in 'ToolBtnProperties.pas' {ToolBtnPropertiesForm},
   SystemUtils in 'SystemUtils.pas',
+  ToolBars in 'ToolBars.pas',
   Snake in 'Snake.pas';
 
 {$R *.res}

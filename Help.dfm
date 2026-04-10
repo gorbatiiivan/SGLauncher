@@ -35,7 +35,7 @@ object HelpForm: THelpForm
         Align = alTop
         Alignment = taCenter
         AutoSize = False
-        Caption = 'Start Game Launcher'
+        Caption = 'STARt Game Launcher'
         Font.Charset = DEFAULT_CHARSET
         Font.Color = clWindowText
         Font.Height = -32
@@ -64,7 +64,7 @@ object HelpForm: THelpForm
         Height = 91
         AutoSize = False
         Caption = 
-          'Start Game Launcher is a portable open source application for Wi' +
+          'STARt Game Launcher is a portable open source application for Wi' +
           'ndows that can easily run eXo collections.'
         WordWrap = True
       end

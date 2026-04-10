@@ -24,6 +24,8 @@ function CreateDesktopShellLink(
 procedure BuildStylesMenu(ARootMenu: TMenuItem; AOnClick: TNotifyEvent);
 function ToggleSelfInStartupFolder(AddIt: Boolean): Boolean;
 function IsInStartupFolder: Boolean;
+function GetLastFolderName(const Path: string): string;
+function ExtractBaseTitle(const FileName: string): string;
 // ---------------------------------------------------------------------------
 
 implementation
@@ -366,6 +368,39 @@ begin
   finally
     SL := nil;   // освобождаем интерфейс
   end;
+end;
+
+function GetLastFolderName(const Path: string): string;
+begin
+  Result := TPath.GetFileName(ExcludeTrailingPathDelimiter(Path));
+end;
+
+function ExtractBaseTitle(const FileName: string): string;
+var
+  S: string;
+  DashPos: Integer;
+  NumPart: string;
+  N: Integer;
+begin
+  // 1. Берём только имя файла
+  S := ExtractFileName(FileName);
+
+  // 2. Убираем расширение
+  S := ChangeFileExt(S, '');
+
+  // 3. Последний дефис
+  DashPos := LastDelimiter('-', S);
+
+  if DashPos > 0 then
+  begin
+    NumPart := Copy(S, DashPos + 1, MaxInt);
+
+    // 4. Если после дефиса ТОЛЬКО число — удаляем
+    if TryStrToInt(NumPart, N) then
+      Delete(S, DashPos, MaxInt);
+  end;
+
+  Result := S;
 end;
 
 end.
