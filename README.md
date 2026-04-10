@@ -16,32 +16,20 @@ For corectly showing installed games need to add specify name folders (located i
 
 Example: 
 
-eXoDos=!dos
-
-eXoWin3x=!win3x 
-
-eXoWin9x=!win9x
-
-eXoIF=!IF
-
-eXoAppleIIGS=!appleiigs
-
-eXoDREAMM=!DREAMM
-
-eXoScummVM=!ScummVM
-
-eXoDemoScene=!demoscn
-
 !dos;!win3x;!win9x;!IF;!appleiigs;!DREAMM;!ScummVM;!demoscn
-
-<img width="428" height="172" alt="Screenshot 2026-03-28 142438" src="https://github.com/user-attachments/assets/b9eb1994-d1b6-4d9e-affd-844a925461aa" />
 
 
 ------------------------------------------------------------------------------------------------------
 
+For corectly showing language pack need to add specify name folders (located in TrayMenu/Options/Specify languages folders)
+
+Example: 
+
+!german
+etc...
+
+------------------------------------------------------------------------------------------------------
 
 No installation required, just move the SGLauncher folder to your LaunchBox folder.
-
-Not tested with languages pack.
 
 ------------------------------------------------------------------------------------------------------
