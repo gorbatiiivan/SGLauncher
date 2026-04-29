@@ -3,7 +3,8 @@
 interface
 
 uses Winapi.Windows, System.SysUtils, System.Classes, Vcl.Graphics, Vcl.Controls,
-     Vcl.Forms, Vcl.Dialogs, Vcl.ComCtrls, Vcl.Menus, ShellAPI, CommCtrl, IniFiles;
+     Vcl.Forms, Vcl.Dialogs, Vcl.ComCtrls, Vcl.Menus, ShellAPI, CommCtrl, IniFiles,
+     System.TypInfo;
 
 // GENERAL FUNCTIONS
 // ---------------------------------------------------------------------------
@@ -25,6 +26,7 @@ procedure DeleteToolButton(ToolBar: TToolBar; Hint: string;
   Config: TMemIniFile; ImageList: TImageList; OnButtonClick: TNotifyEvent);
 procedure AddItemToButtonPopup(ToolBar: TToolBar; Config: TMemIniFile; Form: TForm;
   OnButtonClick: TNotifyEvent);
+procedure UpdateToolbarMenuChecks(MenuItem: TMenuItem; ToolBar: TToolBar);
 // ---------------------------------------------------------------------------
 
 implementation
@@ -381,6 +383,26 @@ begin
   // ← Важно! Привязываем меню также к самому ToolBar
   //   (чтобы можно было кликнуть правой кнопкой по пустому месту тулбара)
   ToolBar.PopupMenu := Popup;
+end;
+
+procedure UpdateToolbarMenuChecks(MenuItem: TMenuItem; ToolBar: TToolBar);
+// Checked in INI ToolBar align for menu
+var
+  I: Integer;
+  Root: TMenuItem;
+  AlignName: string;
+begin
+  // родительский пункт меню (где 4 позиции)
+  Root := MenuItem.Parent;
+
+  AlignName :=
+    GetEnumName(TypeInfo(TAlign), Ord(ToolBar.Align));
+
+  for I := 0 to Root.Count - 1 do
+  begin
+    Root.Items[I].Checked :=
+      SameText(Root.Items[I].Hint, AlignName);
+  end;
 end;
 
 end.

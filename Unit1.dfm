@@ -272,6 +272,8 @@ object SGLMainForm: TSGLMainForm
         Columns = <
           item
             Width = 514
+          end
+          item
           end>
         DoubleBuffered = False
         Font.Charset = DEFAULT_CHARSET
@@ -457,6 +459,10 @@ object SGLMainForm: TSGLMainForm
             OnClick = ToolBarTop1Click
           end
         end
+      end
+      object EmptyWorkingSet1: TMenuItem
+        Caption = 'EmptyWorkingSet'
+        OnClick = EmptyWorkingSet1Click
       end
       object N5: TMenuItem
         Caption = '-'

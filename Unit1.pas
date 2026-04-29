@@ -8,10 +8,11 @@ uses
   Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.Buttons, Vcl.Imaging.jpeg, Vcl.Imaging.pngimage,
   Vcl.Imaging.GIFImg, Xml.XMLIntf, Xml.XMLDoc, Math, ActiveX, ComObj, ShellAPI,
   IniFiles, Vcl.Menus, ShlObj, Vcl.ImgList, StrUtils, System.Generics.Collections,
-  System.ImageList, Vcl.ToolWin, Vcl.Themes, System.TypInfo, SyncObjs;
+  System.ImageList, Vcl.ToolWin, Vcl.Themes, System.TypInfo, SyncObjs, PsAPI,
+  System.Generics.Defaults;
 
 const
-  sReleaseDate = '10.04.2026';
+  sReleaseDate = '30.04.2026';
 
 type
   TGameData = record
@@ -89,6 +90,7 @@ type
     StyleMenu1: TMenuItem;
     Autostart1: TMenuItem;
     Specifylanguagefolders1: TMenuItem;
+    EmptyWorkingSet1: TMenuItem;
     procedure FormResize(Sender: TObject);
     procedure ListView1Data(Sender: TObject; Item: TListItem);
     procedure ListView1SelectItem(Sender: TObject; Item: TListItem; Selected: Boolean);
@@ -122,6 +124,7 @@ type
     procedure ToolBarTop1Click(Sender: TObject);
     procedure Autostart1Click(Sender: TObject);
     procedure Specifylanguagefolders1Click(Sender: TObject);
+    procedure EmptyWorkingSet1Click(Sender: TObject);
   private
     NConfig: TMemIniFile;
     FClosing: Boolean;
@@ -143,7 +146,7 @@ type
     FIsChangingTab: Boolean;
     FPendingTabIndex: Integer;
     FTabChangeTimer: TTimer;
-    // многопоточная загрузка XML-файлов
+    // Многопоточная загрузка XML-файлов
     FGameDataLock: TCriticalSection;           // Защита массива FGameData
     FLoadedGamesCount: Integer;                // Счётчик загруженных игр (атомарно)
     FTotalXMLFiles: Integer;                   // Общее количество XML для прогресса
@@ -160,17 +163,18 @@ type
     FImageLoadRealIndex: Integer;      // Реальный индекс в FGameData
     FImageLoadItemIndex: Integer;      // Индекс в ListView
     FImageLoadLock: TCriticalSection;  // Для синхронизации доступа к данным
-    FImageLoadCancel: Boolean;         // Отмена текущей загрузки
+    FImageGeneration: Integer;         // счётчик поколений
     //----------------------
     procedure AddGameToArray(const G: TGameData);
     procedure SortGameData;
     procedure ScanXMLFromDir(const Dir: string);
-    procedure LoadXMLToArrayThreadSafe(const XMLFileName: string;
-              var GamesArray: array of TGameData; var CurrentCount: Integer);
+    procedure LoadXMLToArrayThreadSafe(const XMLFileName: string);
     procedure LoadXMLFilesMultiThreaded(const XMLFiles: TStringDynArray);
     procedure RefreshInstalledStatus;
     procedure ApplyFilters;
-    procedure InitializeComboBoxes;
+    procedure BuildGenreSeriesList(const PlatformFilter: string; Target: TStringList);
+    procedure FillGenreSeriesCombo(const PlatformFilter: string);
+    procedure InitializePlatformTabs;
     procedure FinalizeLoading;
     procedure UpdateExtrasMenu(const GameIndex: Integer);
     procedure ClearGameInfo;
@@ -183,11 +187,15 @@ type
               ForcedName: string; ImageList: TStringList);
     procedure DoProcessPendingTabChange(Sender: TObject);
     procedure PerformTabChange(NewTabIndex: Integer);
+    procedure SetupListViewColumns;
+    procedure AutoSizeListViewColumns;
+    //----------------------
     function GetFConfig: TMemIniFile;
     function GetNConfig: TMemIniFile;
     procedure RegIni(Write: Boolean);
     procedure OnExtrasMenuItemClick(Sender: TObject);
     procedure StyleMenuClick(Sender: TObject);
+    procedure ToolBarMenuClick(Sender: TObject);
     //----------------------
     procedure WMCopyData(var Msg: TWMCopyData); message WM_COPYDATA;
    public
@@ -294,60 +302,46 @@ begin
   // Если ничего не нашли — оставляем основной очищенный путь
 end;
 
-function IsGameInstalled(const G: TGameData;
-  LanguagesPack: TStringList = nil): Boolean;
+function IsGameInstalled(const G: TGameData; LanguagesPack: TStringList = nil): Boolean;
 var
   CleanRelPath, FullPath, FullDir: string;
   Paths: TArray<string>;
   I: Integer;
   OwnLP: TStringList;
-  UseLanguages: Boolean;
+  ActiveLP: TStringList;  // то, что реально используем
 begin
   Result := False;
-  if Trim(G.ApplicationPath) = '' then
-    Exit;
+  if Trim(G.ApplicationPath) = '' then Exit;
 
-  // Определяем, нужно ли вообще работать с языками
-  UseLanguages := Assigned(LanguagesPack) and (LanguagesPack.Count > 0) and
-                  (Trim(LanguagesPack.DelimitedText) <> '');
+  OwnLP := nil;
+  ActiveLP := LanguagesPack;  // по умолчанию — то, что передали
 
-  if not UseLanguages then
+  // Если не передали — создаём свой из конфига
+  if not Assigned(ActiveLP) then
   begin
-    // === Быстрый путь без языков ===
-    CleanRelPath := NormalizeLaunchBoxPath(G.ApplicationPath, SGLMainForm.FIgnoredFolders, nil);
-  end
-  else
-  begin
-    // С языками
-    OwnLP := nil;
-    if LanguagesPack = nil then
-    begin
-      OwnLP := TStringList.Create;
-      OwnLP.Delimiter := ';';
-      OwnLP.StrictDelimiter := True;
-      OwnLP.DelimitedText := SGLMainForm.FConfig.ReadString('SGAllSettings', 'LanguagesPack', '');
-      LanguagesPack := OwnLP;
-    end;
+    OwnLP := TStringList.Create;
+    OwnLP.Delimiter := ';';
+    OwnLP.StrictDelimiter := True;
+    OwnLP.DelimitedText := SGLMainForm.FConfig.ReadString('SGAllSettings', 'LanguagesPack', '');
+    ActiveLP := OwnLP;
+  end;
 
-    try
-      CleanRelPath := NormalizeLaunchBoxPath(G.ApplicationPath,
-        SGLMainForm.FIgnoredFolders, LanguagesPack);
-    finally
-      OwnLP.Free;
-    end;
+  try
+    // Одна ветка вместо двух — NormalizeLaunchBoxPath сама обработает пустой список
+    CleanRelPath := NormalizeLaunchBoxPath(G.ApplicationPath,
+      SGLMainForm.FIgnoredFolders, ActiveLP);
+  finally
+    OwnLP.Free;  // nil.Free безопасен, но теперь OwnLP реально может быть создан
   end;
 
   if CleanRelPath = '' then Exit;
 
   Paths := CleanRelPath.Split(['|']);
-
   for I := 0 to High(Paths) do
   begin
     if Trim(Paths[I]) = '' then Continue;
-
     FullPath := TPath.GetFullPath(TPath.Combine(LaunchBoxDir, Paths[I]));
     FullDir := ExtractFileDir(FullPath);
-
     if DirectoryExists(FullDir) or FileExists(FullPath) then
     begin
       Result := True;
@@ -398,22 +392,15 @@ procedure TSGLMainForm.UpdateExtrasMenu(const GameIndex: Integer);
 
   // Вспомогательная процедура сортировки
   procedure SortStringArray(var Arr: TStringDynArray);
-  var
-    sl: TStringList;
-    i: Integer;
   begin
-    sl := TStringList.Create;
-    try
-      sl.Sorted := False;
-      sl.Duplicates := dupAccept;
-      for i := 0 to High(Arr) do
-        sl.AddObject(ExtractFileName(Arr[i]), TObject(i));
-      sl.Sort;
-      for i := 0 to sl.Count-1 do
-        Arr[i] := TStringDynArray(Arr)[Integer(sl.Objects[i])];
-    finally
-      sl.Free;
-    end;
+    TArray.Sort<string>(Arr,
+    TComparer<string>.Construct(
+      function(const A, B: string): Integer
+      begin
+        Result := CompareText(ExtractFileName(A), ExtractFileName(B));
+      end
+    )
+  );
   end;
 
   // Рекурсивная процедура добавления содержимого папки в меню
@@ -507,14 +494,17 @@ procedure TSGLMainForm.UpdateExtrasMenu(const GameIndex: Integer);
   var
     LangName: string;
   begin
-    // Убираем ведущий '!', если есть
-    LangName := StringReplace(LangFolder, '!', '', [rfReplaceAll]);
+   // Убираем только ведущий '!', если есть
+   if (Length(LangFolder) > 0) and (LangFolder[1] = '!') then
+     LangName := Copy(LangFolder, 2, MaxInt)
+   else
+     LangName := LangFolder;
 
-    // Преобразуем первую букву в заглавную
-    if Length(LangName) > 0 then
-      LangName := UpperCase(LangName[1]) + Copy(LangName, 2, MaxInt);
+   // Преобразуем первую букву в заглавную
+   if Length(LangName) > 0 then
+     LangName := UpperCase(LangName[1]) + Copy(LangName, 2, MaxInt);
 
-    Result := LangName;
+   Result := LangName;
   end;
 
   // Процедура добавления языковых extras
@@ -673,75 +663,110 @@ begin
   PrevImgBtn.Enabled := False;
   while PopupMenu1.Items.Count > 8 do
     PopupMenu1.Items.Delete(PopupMenu1.Items.Count - 1);
+  if PopupMenu1.Images <> nil then
+    (PopupMenu1.Images as TImageList).Clear; // очистить накопленные иконки
 end;
 
-procedure TSGLMainForm.InitializeComboBoxes;
+procedure TSGLMainForm.BuildGenreSeriesList(const PlatformFilter: string;
+  Target: TStringList);
 var
   i, j: Integer;
-  Items: TStringList;
-  Platforms: TStringList;
   GameGenres, GameSeries: TStringDynArray;
+  IsAll, IsInstalled: Boolean;
 begin
-  Items := TStringList.Create;
-  Platforms := TStringList.Create;
-  try
-    Items.Sorted := True;          // Автоматическая сортировка
-    Items.Duplicates := dupIgnore; // Без дубликатов
+  IsAll       := SameText(PlatformFilter, 'All');
+  IsInstalled := SameText(PlatformFilter, 'Installed');
 
-    // Временный список для сортировки платформ
-    Platforms.Sorted := True;
-    Platforms.Duplicates := dupIgnore;
-
-    for i := 0 to High(FGameData) do
+  for i := 0 to High(FGameData) do
+  begin
+    // Фильтрация по платформе
+    if IsInstalled then
     begin
-      // Собираем платформы (кроме специальных)
-      if (FGameData[i].Platforms <> '') and
-         (FGameData[i].Platforms <> 'All') and
-         (FGameData[i].Platforms <> 'Installed') and
-         (Platforms.IndexOf(FGameData[i].Platforms) = -1) then
-        Platforms.Add(FGameData[i].Platforms);
+      if not FGameData[i].IsInstalled then Continue;
+    end
+    else if not IsAll then
+    begin
+      if not SameText(FGameData[i].Platforms, PlatformFilter) then Continue;
+    end;
 
-      // Жанры
-      if FGameData[i].Genre <> '' then
+    // Жанры
+    if FGameData[i].Genre <> '' then
+    begin
+      GameGenres := FGameData[i].Genre.Split([';', '/']);
+      for j := 0 to High(GameGenres) do
       begin
-        GameGenres := FGameData[i].Genre.Split([';', '/']);
-        for j := 0 to High(GameGenres) do
-        begin
-          GameGenres[j] := Trim(GameGenres[j]);
-          if (GameGenres[j] <> '') and (Items.IndexOf(GameGenres[j]) = -1) then
-            Items.Add('[Genre] ' + GameGenres[j]);
-        end;
-      end;
-
-      // Серии — добавляем с префиксом [Series] для отличия
-      if FGameData[i].Series <> '' then
-      begin
-        GameSeries := FGameData[i].Series.Split([';', '/']);
-        for j := 0 to High(GameSeries) do
-        begin
-          GameSeries[j] := Trim(GameSeries[j]);
-          if GameSeries[j] <> '' then
-            Items.Add('[Series] ' + GameSeries[j]);
-        end;
+        GameGenres[j] := Trim(GameGenres[j]);
+        if GameGenres[j] <> '' then
+          Target.Add('[Genre] ' + GameGenres[j]); // дубликаты игнорирует сам список
       end;
     end;
 
-    ComboBox1.Items.Assign(Items);
-    ComboBox1.Items.Insert(0, 'All Genres/Series');
+    // Серии
+    if FGameData[i].Series <> '' then
+    begin
+      GameSeries := FGameData[i].Series.Split([';', '/']);
+      for j := 0 to High(GameSeries) do
+      begin
+        GameSeries[j] := Trim(GameSeries[j]);
+        if GameSeries[j] <> '' then
+          Target.Add('[Series] ' + GameSeries[j]);
+      end;
+    end;
+  end;
+end;
+
+procedure TSGLMainForm.FillGenreSeriesCombo(const PlatformFilter: string);
+var
+  GenresSeries: TStringList;
+begin
+  GenresSeries := TStringList.Create;
+  try
+    GenresSeries.Sorted     := True;
+    GenresSeries.Duplicates := dupIgnore;
+
+    BuildGenreSeriesList(PlatformFilter, GenresSeries);
+
+    ComboBox1.Items.BeginUpdate;
+    try
+      ComboBox1.Items.Clear;
+      ComboBox1.Items.Add('All Genres/Series');
+      ComboBox1.Items.AddStrings(GenresSeries);
+    finally
+      ComboBox1.Items.EndUpdate;
+    end;
     ComboBox1.ItemIndex := 0;
+  finally
+    GenresSeries.Free;
+  end;
+end;
 
-    // Формируем список вкладок с правильным порядком
+procedure TSGLMainForm.InitializePlatformTabs;
+var
+  i: Integer;
+  Platforms: TStringList;
+begin
+  Platforms := TStringList.Create;
+  try
+    Platforms.Sorted     := True;
+    Platforms.Duplicates := dupIgnore;
+
+    for i := 0 to High(FGameData) do
+      if (FGameData[i].Platforms <> '') and
+         (FGameData[i].Platforms <> 'All') and
+         (FGameData[i].Platforms <> 'Installed') then
+        Platforms.Add(FGameData[i].Platforms);
+
+    // Строим вкладки
     TabControl1.Tabs.Clear;
-    TabControl1.Tabs.Add('All');  // Первая вкладка
-    TabControl1.Tabs.Add('Installed');      // Вторая вкладка
-
-    // Добавляем остальные отсортированные платформы
+    TabControl1.Tabs.Add('All');
+    TabControl1.Tabs.Add('Installed');
     for i := 0 to Platforms.Count - 1 do
       TabControl1.Tabs.Add(Platforms[i]);
-
     TabControl1.TabIndex := 0;
+
+    // Заполняем ComboBox (через общий метод, фильтр = 'All')
+    FillGenreSeriesCombo('All');
   finally
-    Items.Free;
     Platforms.Free;
   end;
 end;
@@ -788,26 +813,25 @@ begin
     begin
       CoInitialize(nil);
       try
-        if TThread.CurrentThread.CheckTerminated or FClosing then Exit;
-
         ScanXMLFromDir(PlatformsDir);
         SetLength(FGameData, FActualGameCount);
 
         if TThread.CurrentThread.CheckTerminated or FClosing then Exit;
-
-        Edit1.Enabled := True;
-        ComboBox1.Enabled := True;
-        ScrollBox1.Enabled := True;
-        NextImgBtn.Enabled := True;
-        TrayIcon.Icon := Application.Icon;
-        SGLMainForm.Icon := Application.Icon;
 
         TThread.Queue(nil,
           procedure
           begin
             if FClosing or (csDestroying in ComponentState) then Exit;
 
-            InitializeComboBoxes; // строятся вкладки
+            // Разблокируем контролы
+            Edit1.Enabled := True;
+            ComboBox1.Enabled := True;
+            ScrollBox1.Enabled := True;
+            NextImgBtn.Enabled := True;
+            TrayIcon.Icon := Application.Icon;
+            SGLMainForm.Icon := Application.Icon;
+
+            InitializePlatformTabs; // строятся вкладки
             FLoadingComplete := True; // разрешаем фильтрацию
             // Загрузка последней сохраненной вкладке
             SavedTab := FConfig.ReadString('SGAllSettings', 'LastTab', 'All');
@@ -815,13 +839,31 @@ begin
             if TabIdx < 0 then TabIdx := TabControl1.Tabs.IndexOf('All');
             if TabIdx < 0 then TabIdx := 0;
             TabControl1.TabIndex := TabIdx;
-            //------------------------------------------------------------------
-            UpdateGenreSeriesComboForCurrentPlatform;
-            ApplyFilters;
-            ListView1.Items.Count := Length(FFilteredIndices);
-            ListView1.Invalidate;
-            ListView1.Refresh;
-            Caption := 'Total Games: ' + IntToStr(Length(FGameData));
+
+            // Замораживаем отрисовку на время настройки колонок и фильтрации
+            SendMessage(ListView1.Handle, WM_SETREDRAW, WPARAM(False), 0);
+            try
+              SetupListViewColumns;
+              UpdateGenreSeriesComboForCurrentPlatform;
+              ApplyFilters;
+              ListView1.Items.Count := Length(FFilteredIndices);
+              AutoSizeListViewColumns;
+            finally
+              SendMessage(ListView1.Handle, WM_SETREDRAW, WPARAM(True), 0);
+              RedrawWindow(ListView1.Handle, nil, 0,
+                RDW_ERASE or RDW_FRAME or RDW_INVALIDATE or RDW_ALLCHILDREN);
+            end;
+
+            if FConfig.ReadBool('SGAllSettings', 'EmptyWorkingSet', False) then
+            if Win32Platform = VER_PLATFORM_WIN32_NT then
+             begin
+              EmptyWorkingSet(GetCurrentProcess);
+              SetProcessWorkingSetSize(GetCurrentProcess, SIZE_T(-1), SIZE_T(-1));
+             end;
+
+            Caption := Format('%s %d', [TabControl1.Tabs[TabControl1.TabIndex]+' - ', Length(FFilteredIndices)]);
+            if Length(FGameData) <> Length(FFilteredIndices) then
+              Caption := Caption + Format(' / %d', [Length(FGameData)]);
             TrayIcon.Hint := Caption;
 
             // Выделяем первую игру
@@ -842,9 +884,6 @@ begin
 
   FLoaderThread.FreeOnTerminate := False;
   FLoaderThread.Start;
-
-  if not SetProcessWorkingSetSize(GetCurrentProcess, SIZE_T(-1), SIZE_T(-1)) then
-    Exit;
 end;
 
 procedure TSGLMainForm.ApplyFilters;
@@ -926,125 +965,29 @@ begin
   ListView1.Items.Count := Length(FFilteredIndices);
   ListView1.Invalidate;
 
-  Caption := 'Total Games: ' + IntToStr(Length(FFilteredIndices));
+  Caption := Format('%s %d', [TabControl1.Tabs[TabControl1.TabIndex]+' - ', Length(FFilteredIndices)]);
+  if Length(FGameData) <> Length(FFilteredIndices) then
+    Caption := Caption + Format(' / %d', [Length(FGameData)]);
   TrayIcon.Hint := Caption;
 
   ClearGameInfo;
 end;
 
 procedure TSGLMainForm.SortGameData;
-procedure QuickSort(L, R: Integer);
-  var
-    I, J: Integer;
-    P: string;
-    T: TGameData;
-  begin
-    repeat
-      I := L;
-      J := R;
-      P := FGameData[(L + R) shr 1].GameName;
-
-      repeat
-        while CompareText(FGameData[I].GameName, P) < 0 do Inc(I);
-        while CompareText(FGameData[J].GameName, P) > 0 do Dec(J);
-
-        if I <= J then
-        begin
-          if I <> J then
-          begin
-            T := FGameData[I];
-            FGameData[I] := FGameData[J];
-            FGameData[J] := T;
-          end;
-          Inc(I);
-          Dec(J);
-        end;
-      until I > J;
-
-      if L < J then QuickSort(L, J);
-      L := I;
-    until I >= R;
-  end;
-
 begin
-  if Length(FGameData) > 1 then
-    QuickSort(0, High(FGameData));
+  TArray.Sort<TGameData>(FGameData,
+    TComparer<TGameData>.Construct(
+      function(const A, B: TGameData): Integer
+      begin
+        Result := CompareText(A.GameName, B.GameName);
+      end));
 end;
 
 procedure TSGLMainForm.UpdateGenreSeriesComboForCurrentPlatform;
-var
-  i, j: Integer;
-  GenresSeries: TStringList;
-  SelectedPlatform: string;
-  GameGenres, GameSeries: TStringDynArray;
-  IsInstalledTab: Boolean;
 begin
   if not FLoadingComplete or FClosing or (csDestroying in ComponentState) then Exit;
-  if not FLoadingComplete then Exit;
 
-  SelectedPlatform := TabControl1.Tabs[TabControl1.TabIndex];
-  IsInstalledTab := SameText(SelectedPlatform, 'Installed');
-
-  GenresSeries := TStringList.Create;
-  try
-    GenresSeries.Sorted := True;
-    GenresSeries.Duplicates := dupIgnore;
-
-    for i := 0 to High(FGameData) do
-    begin
-      // Если это вкладка Installed — игнорируем платформу, но проверяем установку
-      if IsInstalledTab then
-      begin
-        if not FGameData[i].IsInstalled then
-          Continue;
-      end
-      else
-      // Обычные платформы — фильтруем по совпадению платформы
-      if not ((SelectedPlatform = 'All') or
-              SameText(FGameData[i].Platforms, SelectedPlatform)) then
-        Continue;
-
-      // Добавляем жанры
-      if FGameData[i].Genre <> '' then
-      begin
-        GameGenres := FGameData[i].Genre.Split([';', '/']);
-        for j := 0 to High(GameGenres) do
-        begin
-          GameGenres[j] := Trim(GameGenres[j]);
-          if (GameGenres[j] <> '') and (GenresSeries.IndexOf(GameGenres[j]) = -1) then
-            GenresSeries.Add('[Genre] ' + GameGenres[j]);
-        end;
-      end;
-
-      // Добавляем серии с префиксом [Series]
-      if FGameData[i].Series <> '' then
-      begin
-        GameSeries := FGameData[i].Series.Split([';', '/']);
-        for j := 0 to High(GameSeries) do
-        begin
-          GameSeries[j] := Trim(GameSeries[j]);
-          if (GameSeries[j] <> '') and
-             (GenresSeries.IndexOf('[Series] ' + GameSeries[j]) = -1) then
-            GenresSeries.Add('[Series] ' + GameSeries[j]);
-        end;
-      end;
-    end;
-
-    // Обновляем ComboBox
-    ComboBox1.Items.BeginUpdate;
-    try
-      ComboBox1.Items.Clear;
-      ComboBox1.Items.Add('All Genres/Series');
-      ComboBox1.Items.AddStrings(GenresSeries);
-    finally
-      ComboBox1.Items.EndUpdate;
-    end;
-
-    ComboBox1.ItemIndex := 0;
-
-  finally
-    GenresSeries.Free;
-  end;
+  FillGenreSeriesCombo(TabControl1.Tabs[TabControl1.TabIndex]);
 end;
 
 procedure TSGLMainForm.ShowGameByIndex(const ItemIndex: Integer);
@@ -1135,131 +1078,149 @@ begin
 end;
 
 procedure TSGLMainForm.StartImageLoadThread(ItemIndex, RealIndex: Integer);
-  begin
+begin
     // ===== ЗАПУСКАЕМ ПОТОК ДЛЯ ЗАГРУЗКИ ИЗОБРАЖЕНИЙ =====
     FImageLoadLock.Enter;
     try
-      // Отменяем предыдущую загрузку
-      FImageLoadCancel := True;
-
-      // Устанавливаем новые параметры
+      Inc(FImageGeneration);         // ← каждый новый запрос — новое поколение
       FImageLoadPending := True;
       FImageLoadGameIndex := RealIndex;
       FImageLoadItemIndex := ItemIndex;
-      FImageLoadCancel := False;
     finally
       FImageLoadLock.Leave;
     end;
 
-    // Если поток ещё не создан или завершён - создаём новый
-    if (FImageLoadThread = nil) or FImageLoadThread.Finished then
+    // Если поток уже работает — он сам увидит новое поколение
+  if (FImageLoadThread <> nil) and not FImageLoadThread.Finished then
+    Exit;
+
+  // ── Создаём рабочий поток ─────────────────────────────────────────────
+  FImageLoadThread := TThread.CreateAnonymousThread(
+    procedure
+    var
+      CapturedGeneration : Integer;   // Поколение текущего задания
+      LocalGameIndex     : Integer;
+      LocalItemIndex     : Integer;
+      LocalPlatform      : string;
+      LocalGameName      : string;
+      LocalReleaseDate   : string;
+      LocalID            : string;
+      LocalForceName     : string;
+      LocalImgList       : TStringList; // Строится в потоке
+      QueueList          : TStringList; // Передаётся в Queue (отдельный захват!)
     begin
-      FImageLoadThread := TThread.CreateAnonymousThread(
-        procedure
-        var
-          LocalGameIndex: Integer;
-          LocalItemIndex: Integer;
-          LocalPlatform: string;
-          LocalGameName: string;
-          LocalReleaseDate: string;
-          LocalID: string;
-          LocalForceName: string;
-          LocalImgList: TStringList;
-          LocalCancel: Boolean;
-          LocalClosing: Boolean;
-        begin
-          while not (TThread.CurrentThread.CheckTerminated or FClosing) do
-          begin
-            // Копируем данные под защитой
-            FImageLoadLock.Enter;
-            try
-              if not FImageLoadPending or FClosing then
-                Break;
+      while not (TThread.CurrentThread.CheckTerminated or FClosing) do
+      begin
 
-              LocalGameIndex := FImageLoadGameIndex;
-              LocalItemIndex := FImageLoadItemIndex;
-              LocalPlatform := FGameData[LocalGameIndex].Platforms;
-              LocalGameName := FGameData[LocalGameIndex].GameName;
-              LocalReleaseDate := IntToStr(FGameData[LocalGameIndex].ReleaseYear);
-              LocalID := FGameData[LocalGameIndex].ID;
+        // ── 1. Читаем задание под блокировкой ──────────────────────────
+        FImageLoadLock.Enter;
+        try
+          // Нет нового задания — поток завершает работу
+          if not FImageLoadPending or FClosing then
+            Break;
 
-              // Получаем форсированное имя
-              if NConfig.ValueExists(LocalPlatform, LocalID) then
-                LocalForceName := NConfig.ReadString(LocalPlatform, LocalID, '')
-              else
-                LocalForceName := '';
+          CapturedGeneration := FImageGeneration;   // Запоминаем "наше" поколение
+          LocalGameIndex     := FImageLoadGameIndex;
+          LocalItemIndex     := FImageLoadItemIndex;
+          LocalPlatform      := FGameData[LocalGameIndex].Platforms;
+          LocalGameName      := FGameData[LocalGameIndex].GameName;
+          LocalReleaseDate   := IntToStr(FGameData[LocalGameIndex].ReleaseYear);
+          LocalID            := FGameData[LocalGameIndex].ID;
 
-              FImageLoadPending := False;
-              LocalCancel := FImageLoadCancel;
-              LocalClosing := FClosing;
-            finally
-              FImageLoadLock.Leave;
-            end;
+          if NConfig.ValueExists(LocalPlatform, LocalID) then
+            LocalForceName := NConfig.ReadString(LocalPlatform, LocalID, '')
+          else
+            LocalForceName := '';
 
-            if LocalCancel or LocalClosing then
-              Break;
+          FImageLoadPending := False;  // Задание принято в обработку
+        finally
+          FImageLoadLock.Leave;
+        end;
 
-            // Создаём локальный список изображений
-            LocalImgList := TStringList.Create;
-            try
-              LocalImgList.Duplicates := dupIgnore;
-              LocalImgList.CaseSensitive := False;
+        // ── 2. Ищем файлы изображений (тяжёлая операция) ───────────────
+        LocalImgList := TStringList.Create;
+        try
+          LocalImgList.Duplicates    := dupIgnore;
+          LocalImgList.CaseSensitive := False;
 
-              // Загружаем список изображений (тяжёлая операция)
-              FindGameImages(LocalPlatform, LocalGameName,
-                            LocalReleaseDate, LocalID, LocalForceName,
-                            LocalImgList);
-
-              if TThread.CurrentThread.CheckTerminated or FClosing then
-                Break;
-
-              // Возвращаем результат в главный поток
-              TThread.Queue(nil,
-                procedure
-                begin
-                  if FClosing or (csDestroying in ComponentState) then Exit;
-
-                  if not FClosing and (ListView1.ItemIndex = LocalItemIndex) then
-                  begin
-                    // Очищаем старый список и загружаем новый
-                    ImgList.Clear;
-                    ImgList.Assign(LocalImgList);
-
-                    // Показываем первое изображение
-                    if ImgList.Count > 0 then
-                    begin
-                      try
-                        LoadImageWithRetry(ImgList[0], ScreenShotImage);
-                        if Assigned(FullScreenForm) and FullScreenForm.Showing then
-                        LoadImageWithRetry(ImgList[0], FullScreenForm.FullScreenImage);
-                        ImgCurIndex := 0;
-                      except
-                        // Игнорируем ошибки загрузки
-                      end;
-
-                      NextImgBtn.Enabled := ImgList.Count > 1;
-                      PrevImgBtn.Enabled := ImgList.Count > 1;
-                    end;
-                  end;
-
-                  // Освобождаем локальный список в главном потоке
-                  LocalImgList.Free;
-                end
-              );
-
-            except
-              LocalImgList.Free;
-            end;
-
-            // Небольшая пауза, чтобы не грузить процессор
-            Sleep(100);
+          try
+            FindGameImages(LocalPlatform, LocalGameName,
+                           LocalReleaseDate, LocalID, LocalForceName,
+                           LocalImgList);
+          except
+            // Подавляем ошибки поиска — продолжаем с пустым списком
           end;
-        end
-      );
 
-      FImageLoadThread.FreeOnTerminate := False;
-      FImageLoadThread.Start;
-    end;
+          // Прерывание по закрытию/terminate
+          if TThread.CurrentThread.CheckTerminated or FClosing then
+            Break;
+
+          // ── 3. Проверяем актуальность результата ─────────────────────
+          // Пока мы искали — мог прийти новый запрос (новое поколение)
+          if FImageGeneration <> CapturedGeneration then
+            Continue;  // Результат устарел. finally освободит LocalImgList.
+                       // Следующая итерация подхватит новый FImageLoadPending.
+
+          // ── 4. Передаём результат в главный поток ────────────────────
+          // ВАЖНО: используем две переменные, чтобы:
+          //   - QueueList  захватилась замыканием Queue (владение → Queue)
+          //   - LocalImgList стала nil → finally не освободит дважды
+          QueueList    := LocalImgList;
+          LocalImgList := nil;
+
+          TThread.Queue(nil,
+            procedure
+            begin
+              // QueueList — отдельный захват, не связан с LocalImgList
+              try
+                if FClosing or (csDestroying in ComponentState) then Exit;
+
+                // Финальная проверка: вдруг пользователь успел сменить игру
+                // уже после того как Queue встал в очередь
+                if FImageGeneration <> CapturedGeneration then Exit;
+
+                ImgList.Clear;
+                ImgList.Assign(QueueList);
+
+                if ImgList.Count > 0 then
+                begin
+                  try
+                    LoadImageWithRetry(ImgList[0], ScreenShotImage);
+                    if Assigned(FullScreenForm) and FullScreenForm.Showing then
+                      LoadImageWithRetry(ImgList[0], FullScreenForm.FullScreenImage);
+                    ImgCurIndex := 0;
+                  except
+                    // Подавляем ошибки загрузки конкретного файла
+                  end;
+                  NextImgBtn.Enabled := ImgList.Count > 1;
+                  PrevImgBtn.Enabled := ImgList.Count > 1;
+                end
+                else
+                begin
+                  // Изображений нет — явно очищаем UI
+                  ScreenShotImage.Picture := nil;
+                  ImgCurIndex             := -1;
+                  NextImgBtn.Enabled      := False;
+                  PrevImgBtn.Enabled      := False;
+                end;
+
+              finally
+                QueueList.Free;  // Освобождаем в главном потоке
+              end;
+            end
+          );
+
+        finally
+          LocalImgList.Free; // nil-safe: сработает только если НЕ передали в Queue
+        end;
+
+        Sleep(50); // Небольшая пауза перед следующей итерацией
+      end;
+    end
+  );
+
+  FImageLoadThread.FreeOnTerminate := False;
+  FImageLoadThread.Start;
 end;
 
 procedure TSGLMainForm.FindGameImages(const Platforms, GameName, ReleaseDate, ID, ForcedName: string; ImageList: TStringList);
@@ -1273,7 +1234,6 @@ var
   Folder: string;
   Files: TStringDynArray;
   FilePath, FileName: string;
-  RealIndex: Integer;
 
   function OneLine(const s: string): string;
   const
@@ -1400,9 +1360,7 @@ begin
   if not TDirectory.Exists(PlatformDir) then Exit;
 
   // получаем год из даты релиза
-  Year := '';
-  if FGameData[RealIndex].ReleaseYear > 0 then
-    Year := IntToStr(FGameData[RealIndex].ReleaseYear);
+  Year := ReleaseDate;
 
   // базовое имя игры
   BaseNameNoYear := OneLine(GameName);
@@ -1468,8 +1426,8 @@ begin
       else
       begin
         if IsValidMatch(FileName, BaseNameNoYear) or
-           ((BaseNameWithYear <> '') and IsValidMatch(BaseNameWithYear, FileName)) or
-           ((BaseNameWithYearNoSpace <> '') and IsValidMatch(BaseNameWithYearNoSpace, FileName)) then
+           ((BaseNameWithYear <> '') and IsValidMatch(FileName, BaseNameWithYear)) or
+           ((BaseNameWithYearNoSpace <> '') and IsValidMatch(FileName, BaseNameWithYearNoSpace)) then
           ImageList.Add(FilePath);
       end;
     end;
@@ -1510,22 +1468,12 @@ begin
     Exit;
   end;
 
-  for i := 0 to High(XMLFiles) do
-  begin
-    if FClosing then Break;
-
-    LoadXMLToArrayThreadSafe(XMLFiles[i], FGameData, FActualGameCount);
-
-    if (i mod 5 = 0) or (i = High(XMLFiles)) then
-    begin
-      Caption := Format('Loading... %d%%  (%d/%d)',
-        [((i+1)*100) div FTotalXMLFiles, i+1, FTotalXMLFiles]);
-      TrayIcon.Hint := Caption;
-      Application.ProcessMessages;   // чтобы UI обновлялся
-    end;
-  end;
+  LoadXMLFilesMultiThreaded(XMLFiles);
 
   SetLength(FGameData, FActualGameCount);
+
+  FGameDict.Clear;
+  FGameDict.TrimExcess;
 
   if Length(FGameData) > 1 then
     SortGameData;
@@ -1549,8 +1497,7 @@ begin
     FFilteredIndices[i] := i;
 end;
 
-procedure TSGLMainForm.LoadXMLToArrayThreadSafe(const XMLFileName: string;
-  var GamesArray: array of TGameData; var CurrentCount: Integer);
+procedure TSGLMainForm.LoadXMLToArrayThreadSafe(const XMLFileName: string);
 var
   XML: IXMLDocument;
   Nodes: IXMLNodeList;
@@ -1623,67 +1570,62 @@ var
   ThreadCount: Integer;
   Threads: TArray<TThread>;
   I: Integer;
-  LastUpdate: Cardinal;
+  NextFileIdx: Integer;  // атомарный индекс следующего файла для обработки
+  LoadedCount: Integer;  // атомарный счётчик завершённых файлов
 begin
   ThreadCount := TThread.ProcessorCount;
   if ThreadCount > Length(XMLFiles) then ThreadCount := Length(XMLFiles);
   if ThreadCount < 1 then ThreadCount := 1;
 
+  NextFileIdx := 0;
+  LoadedCount := 0;
   SetLength(Threads, ThreadCount);
-  LastUpdate := GetTickCount;
 
+  // Все потоки одинаковые — нет проблемы захвата переменных замыканием.
+  // Каждый поток сам атомарно берёт следующий свободный файл из очереди.
   for I := 0 to ThreadCount - 1 do
   begin
-    var StartIdx := (I * Length(XMLFiles)) div ThreadCount;
-    var EndIdx   := ((I + 1) * Length(XMLFiles)) div ThreadCount;
-
     Threads[I] := TThread.CreateAnonymousThread(
       procedure
       var
-        J: Integer;
-        LocalGames: TArray<TGameData>;
-        LocalCount: Integer;
+        MyIdx: Integer;
+        Loaded: Integer;
+        LastUpdate: Cardinal;  // локальная для каждого потока — нет race condition
       begin
         CoInitialize(nil);
+        LastUpdate := GetTickCount;
         try
-          LocalCount := 0;
-          SetLength(LocalGames, 300);
-
-          for J := StartIdx to EndIdx - 1 do
+          while True do
           begin
             if TThread.CurrentThread.CheckTerminated or FClosing then Break;
 
-            LoadXMLToArrayThreadSafe(XMLFiles[J], LocalGames, LocalCount);
+            // Атомарно берём следующий файл из очереди
+            MyIdx := TInterlocked.Increment(NextFileIdx) - 1;
+            if MyIdx >= Length(XMLFiles) then Break;  // все файлы разобраны
 
-            // Прогресс (обновляем не слишком часто)
-            if (GetTickCount - LastUpdate > 100) or (J = EndIdx-1) then
+            // Игры добавляются в FGameData через AddGameToArray внутри (с блокировкой)
+            LoadXMLToArrayThreadSafe(XMLFiles[MyIdx]);
+
+            Loaded := TInterlocked.Increment(LoadedCount);
+
+            // Прогресс — обновляем не чаще раза в 150 мс
+            if (GetTickCount - LastUpdate > 150) or (Loaded = FTotalXMLFiles) then
             begin
-              TThread.Synchronize(nil,
+              var CapturedLoaded := Loaded;
+              TThread.Queue(nil,
                 procedure
                 begin
                   if not FClosing then
                   begin
-                    Caption := Format('Loading... %d%%  (%d XML files)',
-                      [Round((J + 1) * 100 / FTotalXMLFiles), FTotalXMLFiles]);
+                    Caption := Format('Loading... %d%%  (%d/%d)',
+                      [CapturedLoaded * 100 div FTotalXMLFiles,
+                       CapturedLoaded, FTotalXMLFiles]);
                     TrayIcon.Hint := Caption;
                   end;
                 end);
               LastUpdate := GetTickCount;
             end;
           end;
-
-          // Добавляем собранные игры в главный массив
-          if LocalCount > 0 then
-          begin
-            FGameDataLock.Enter;
-            try
-              for var K := 0 to LocalCount - 1 do
-                AddGameToArray(LocalGames[K]);
-            finally
-              FGameDataLock.Leave;
-            end;
-          end;
-
         finally
           CoUninitialize;
         end;
@@ -1752,108 +1694,209 @@ procedure TSGLMainForm.PerformTabChange(NewTabIndex: Integer);
 // Функция для переключение вкладок
 var
   SelectedPlatform: string;
+  RedrawRestored: Boolean;
 begin
   if not FLoadingComplete or (csDestroying in ComponentState) then Exit;
 
-  // Останавливаем загрузку изображений
+  // Инвалидируем любой текущий и ожидающий поиск изображений
   FImageLoadLock.Enter;
-  try
-    FImageLoadCancel := True;
-    FImageLoadPending := False;
-  finally
-    FImageLoadLock.Leave;
-  end;
+    try
+     Inc(FImageGeneration);      // ← поток увидит несовпадение и бросит результат
+     FImageLoadPending := False; // ← новых запросов не брать
+    finally
+      FImageLoadLock.Leave;
+    end;
 
-  // Ждем завершения потока загрузки изображений
   if Assigned(FImageLoadThread) and not FImageLoadThread.Finished then
   begin
     FImageLoadThread.Terminate;
-    FImageLoadThread.WaitFor;
+    FImageLoadThread.FreeOnTerminate := True;
+    FImageLoadThread := nil;
+  end
+  else
     FreeAndNil(FImageLoadThread);
-  end;
 
-  ListView1.Items.BeginUpdate;
+  if (NewTabIndex < 0) or (NewTabIndex >= TabControl1.Tabs.Count) then
+    Exit;
+
+  TabControl1.TabIndex := NewTabIndex;
+  SelectedPlatform := TabControl1.Tabs[NewTabIndex];
+
+  // --- Замораживаем отрисовку ListView полностью ---
+  SendMessage(ListView1.Handle, WM_SETREDRAW, WPARAM(False), 0);
+  RedrawRestored := False;
   try
     ClearGameInfo;
+    SetupListViewColumns;
 
-    if (NewTabIndex < 0) or (NewTabIndex >= TabControl1.Tabs.Count) then
-      Exit;
-
-    // Синхронно устанавливаем индекс вкладки
-    TabControl1.TabIndex := NewTabIndex;
-    SelectedPlatform := TabControl1.Tabs[NewTabIndex];
-
+    // --- Вкладка "Installed": RefreshInstalledStatus уходит в фон ---
     if SameText(SelectedPlatform, 'Installed') then
-      RefreshInstalledStatus;
-
-    UpdateGenreSeriesComboForCurrentPlatform;
-    ApplyFilters;
-
-    ActiveControl := ListView1;
-
-    if ListView1.Items.Count > 0 then
     begin
-      ListView1.ItemIndex := 0;
-      ListView1.Items[0].Selected := True;
-      ListView1.Items[0].MakeVisible(False);
+      // Пока заморожены — выставляем ширины и очищаем список,
+      // чтобы при разморозке всё выглядело правильно сразу
+      ListView1.Items.Count := 0;
+      AutoSizeListViewColumns;
+
+      // Восстанавливаем рисование ДО запуска фонового потока
+      SendMessage(ListView1.Handle, WM_SETREDRAW, WPARAM(True), 0);
+      RedrawWindow(ListView1.Handle, nil, 0,
+        RDW_ERASE or RDW_FRAME or RDW_INVALIDATE or RDW_ALLCHILDREN);
+      RedrawRestored := True;
+
+      TThread.CreateAnonymousThread(
+        procedure
+        begin
+          RefreshInstalledStatus;
+
+          TThread.Queue(nil,
+            procedure
+            begin
+              if FClosing or (csDestroying in ComponentState) then Exit;
+
+              // Снова замораживаем на время обновления данных
+              SendMessage(ListView1.Handle, WM_SETREDRAW, WPARAM(False), 0);
+              try
+                ListView1.Items.BeginUpdate;
+                try
+                  UpdateGenreSeriesComboForCurrentPlatform;
+                  ApplyFilters;
+                finally
+                  ListView1.Items.EndUpdate;
+                end;
+                AutoSizeListViewColumns;
+              finally
+                SendMessage(ListView1.Handle, WM_SETREDRAW, WPARAM(True), 0);
+                RedrawWindow(ListView1.Handle, nil, 0,
+                  RDW_ERASE or RDW_FRAME or RDW_INVALIDATE or RDW_ALLCHILDREN);
+              end;
+
+              ActiveControl := ListView1;
+              if ListView1.Items.Count > 0 then
+              begin
+                ListView1.ItemIndex := 0;
+                ListView1.Items[0].Selected := True;
+                ListView1.Items[0].MakeVisible(False);
+              end;
+            end
+          );
+        end
+      ).Start;
+
+      Exit;
     end;
 
+    // --- Остальные вкладки ---
+    ListView1.Items.BeginUpdate;
+    try
+      UpdateGenreSeriesComboForCurrentPlatform;
+      ApplyFilters;
+    finally
+      ListView1.Items.EndUpdate;
+    end;
+    AutoSizeListViewColumns;
+
   finally
-    ListView1.Items.EndUpdate;
+    if not RedrawRestored then
+    begin
+      SendMessage(ListView1.Handle, WM_SETREDRAW, WPARAM(True), 0);
+      RedrawWindow(ListView1.Handle, nil, 0,
+        RDW_ERASE or RDW_FRAME or RDW_INVALIDATE or RDW_ALLCHILDREN);
+    end;
   end;
+
+  ActiveControl := ListView1;
+  if ListView1.Items.Count > 0 then
+  begin
+    ListView1.ItemIndex := 0;
+    ListView1.Items[0].Selected := True;
+    ListView1.Items[0].MakeVisible(False);
+  end;
+end;
+
+procedure TSGLMainForm.SetupListViewColumns;
+// управляет колонками All и Installed для отображения платформы
+var
+  SelectedPlatform: string;
+  Col: TListColumn;
+  NeedPlatformCol: Boolean;
+begin
+  if TabControl1.Tabs.Count = 0 then Exit;
+  SelectedPlatform := TabControl1.Tabs[TabControl1.TabIndex];
+  NeedPlatformCol := SameText(SelectedPlatform, 'All') or
+                     SameText(SelectedPlatform, 'Installed');
+
+  ListView1.Columns.BeginUpdate;
+  try
+    ListView1.Columns.Clear;
+
+    Col := ListView1.Columns.Add;
+    Col.Caption := 'Name';
+    Col.AutoSize := False;
+
+    if NeedPlatformCol then
+    begin
+      Col := ListView1.Columns.Add;
+      Col.Caption := 'Platform';
+      Col.AutoSize := False;
+    end;
+  finally
+    ListView1.Columns.EndUpdate;
+  end;
+end;
+
+procedure TSGLMainForm.AutoSizeListViewColumns;
+// управляет размеры колонками ListView
+var
+  i, RealIndex: Integer;
+  PlatWidth, MaxPlatWidth, Padding: Integer;
+  SaveFont: TFont;
+begin
+  // Одна колонка — просто растягиваем на всю ширину
+  if ListView1.Columns.Count < 2 then
+  begin
+    if ListView1.Columns.Count >= 1 then
+      ListView1.Column[0].Width := ListView1.Width - 20;
+    Exit;
+  end;
+
+  Padding := 16; // отступы внутри ячейки
+
+  // Минимальная ширина — по заголовку "Platform"
+  SaveFont := TFont.Create;
+  try
+    SaveFont.Assign(ListView1.Canvas.Font);
+    ListView1.Canvas.Font.Style := [fsBold]; // заголовок обычно жирный
+    MaxPlatWidth := ListView1.Canvas.TextWidth('Platform') + Padding;
+    ListView1.Canvas.Font.Assign(SaveFont);
+  finally
+    SaveFont.Free;
+  end;
+
+  // Перебираем отфильтрованные игры и ищем максимальную ширину платформы
+  if FLoadingComplete then
+  begin
+    ListView1.Canvas.Font := ListView1.Font;
+    for i := 0 to High(FFilteredIndices) do
+    begin
+      RealIndex := FFilteredIndices[i];
+      if (RealIndex >= 0) and (RealIndex < Length(FGameData)) then
+      begin
+        PlatWidth := ListView1.Canvas.TextWidth(FGameData[RealIndex].Platforms) + Padding;
+        if PlatWidth > MaxPlatWidth then
+          MaxPlatWidth := PlatWidth;
+      end;
+    end;
+  end;
+
+  // Ограничиваем: платформа занимает не более 40% ширины списка
+  if MaxPlatWidth > (ListView1.Width - 20) * 2 div 5 then
+    MaxPlatWidth := (ListView1.Width - 20) * 2 div 5;
+
+  ListView1.Column[1].Width := MaxPlatWidth;
+  ListView1.Column[0].Width := ListView1.Width - 20 - MaxPlatWidth;
 end;
 
 //-----------------------------------------------------------------------------
-
-procedure UpdateToolbarMenuChecks;
-// Checked in INI ToolBar align for menu
-var
-  I: Integer;
-  Root: TMenuItem;
-  AlignName: string;
-begin
- with SGLMainForm do
- begin
-  // родительский пункт меню (где 4 позиции)
-  Root := ToolBarTop1.Parent;
-
-  AlignName :=
-    GetEnumName(TypeInfo(TAlign), Ord(ToolBar1.Align));
-
-  for I := 0 to Root.Count - 1 do
-  begin
-    Root.Items[I].Checked :=
-      SameText(Root.Items[I].Hint, AlignName);
-  end;
- end;
-end;
-
-procedure TSGLMainForm.WMCopyData(var Msg: TWMCopyData);
-//Нужно для показа формы если нажать на exe снова
-begin
-  // если скрыта
-  if not IsWindowVisible(Handle) then
-    Show;
-
-  // если свернута
-  if IsIconic(Handle) then
-    ShowWindow(Handle, SW_RESTORE);
-
-  ShowWindow(Handle, SW_SHOW);
-
-  // Обход Windows focus protection
-  SetWindowPos(Handle, HWND_TOPMOST, 0,0,0,0,
-    SWP_NOMOVE or SWP_NOSIZE);
-
-  SetWindowPos(Handle, HWND_NOTOPMOST, 0,0,0,0,
-    SWP_NOMOVE or SWP_NOSIZE);
-
-  SetForegroundWindow(Handle);
-  BringWindowToTop(Handle);
-  SetActiveWindow(Handle);
-
-  Msg.Result := 1;
-end;
 
 procedure TSGLMainForm.StyleMenuClick(Sender: TObject);
 //Нажатие на меню для скинов
@@ -1884,56 +1927,6 @@ begin
   FConfig.UpdateFile;
 end;
 
-procedure StylesLoad();
-var
-  SavedStyle: string;
-  ActiveStyleName: string;
-  i: Integer;
-begin
- with SGLMainForm do
- begin
-  // Загружаем сохранённый стиль
-  SavedStyle := FConfig.ReadString('SGAllSettings', 'Styles', 'Windows');
-
-  // Проверка если есть такой стиль
-  if (SavedStyle <> '') and (TStyleManager.Style[SavedStyle] = nil) then
-      SavedStyle := 'Windows';
-
-  // Пытаемся применить стиль
-  if not TStyleManager.TrySetStyle(SavedStyle, False) then
-   begin
-     TStyleManager.SetStyle('Windows');
-     SavedStyle := 'Windows';
-   end;
-
-  // Берём **реальное** имя стиля, которое применилось
-  ActiveStyleName := TStyleManager.ActiveStyle.Name;
-
-  // Снимаем все галочки
-  for i := 0 to StyleMenu1.Count - 1 do
-    StyleMenu1.Items[i].Checked := False;
-
-  // Ставим галочку по реальному имени
-  for i := 0 to StyleMenu1.Count - 1 do
-    begin
-      if SameText(StyleMenu1.Items[i].Hint, ActiveStyleName) then
-      begin
-        StyleMenu1.Items[i].Checked := True;
-        Exit;  // нашли → выходим
-      end;
-    end;
-
-  // Если ничего не нашли по Hint → ищем "Windows" по Tag
-  if SameText(ActiveStyleName, 'Windows') then
-    for i := 0 to StyleMenu1.Count - 1 do
-     if StyleMenu1.Items[i].Tag = -1 then
-      begin
-       StyleMenu1.Items[i].Checked := True;
-       Break;
-      end;
- end;
-end;
-
 //----CONFIG----
 //------------------------------------------------------------------------------
 function TSGLMainForm.GetFConfig: TMemIniFile;
@@ -1941,7 +1934,6 @@ var
  AppName: String;
 begin
   AppName := ExtractFileName(ChangeFileExt(ParamStr(0),'.ini'));
-  SetCurrentDir(ExtractFilePath(Application.ExeName));
   if FConfig = nil then
   FConfig := TMemIniFile.Create(ExtractFilePath(ParamStr(0))+AppName,TEncoding.UTF8);
   Result := FConfig;
@@ -1952,7 +1944,6 @@ var
  AppName: String;
 begin
   AppName := ExtractFileName(ChangeFileExt(ParamStr(0),''));
-  SetCurrentDir(ExtractFilePath(Application.ExeName));
   if NConfig = nil then
   NConfig := TMemIniFile.Create(ExtractFilePath(ParamStr(0))+AppName+'ImgNames.ini',TEncoding.UTF8);
   Result := NConfig;
@@ -2016,14 +2007,40 @@ if Write = true then
   //ToolBar
   s := FConfig.ReadString('SGAllSettings', 'ToolBarPosition', 'alTop');
   ToolBar1.Align := TAlign(GetEnumValue(TypeInfo(TAlign), s));
-  UpdateToolbarMenuChecks;
+  UpdateToolbarMenuChecks(ToolBarTop1, ToolBar1);
   //---------------------------------------------------------------------------
   Autostart1.Checked := IsInStartupFolder;
+  EmptyWorkingSet1.Checked := FConfig.ReadBool('SGAllSettings', 'EmptyWorkingSet', False);
  end;
 end;
 
 //----FORM----
 //------------------------------------------------------------------------------
+procedure TSGLMainForm.WMCopyData(var Msg: TWMCopyData);
+//Нужно для показа формы если нажать на exe снова
+begin
+  // если скрыта
+  if not IsWindowVisible(Handle) then
+    Show;
+
+  // если свернута
+  if IsIconic(Handle) then
+    ShowWindow(Handle, SW_RESTORE);
+
+  ShowWindow(Handle, SW_SHOW);
+
+  // Обход Windows focus protection
+  SetWindowPos(Handle, HWND_TOPMOST, 0,0,0,0, SWP_NOMOVE or SWP_NOSIZE);
+
+  SetWindowPos(Handle, HWND_NOTOPMOST, 0,0,0,0, SWP_NOMOVE or SWP_NOSIZE);
+
+  SetForegroundWindow(Handle);
+  BringWindowToTop(Handle);
+  SetActiveWindow(Handle);
+
+  Msg.Result := 1;
+end;
+
 procedure TSGLMainForm.FormCloseQuery(Sender: TObject; var CanClose: Boolean);
 begin
   FClosing := True;
@@ -2031,8 +2048,17 @@ begin
   // Останавливаем таймер переключение вкладок
   if Assigned(FTabChangeTimer) then FTabChangeTimer.Enabled := False;
 
-  if Assigned(FImageLoadThread) then FImageLoadThread.Terminate;
-  if Assigned(FLoaderThread) then FLoaderThread.Terminate;
+  if Assigned(FImageLoadThread) then begin
+    FImageLoadThread.Terminate;
+    FImageLoadThread.WaitFor;
+    FreeAndNil(FImageLoadThread);
+  end;
+    if Assigned(FLoaderThread) then begin
+    FLoaderThread.Terminate;
+    FLoaderThread.WaitFor;
+    FreeAndNil(FLoaderThread);
+  end;
+
   if Assigned(FGameDataLock) then FreeAndNil(FGameDataLock);
   if Assigned(FGameDict) then FreeAndNil(FGameDict);
 
@@ -2060,7 +2086,6 @@ begin
   // Инициализация для потоковой загрузки изображений
   FImageLoadLock := TCriticalSection.Create;
   FImageLoadPending := False;
-  FImageLoadCancel := False;
 
   // Переключение вкладок
   FTabChangeLock := TCriticalSection.Create;
@@ -2098,7 +2123,7 @@ begin
 
   //Создание список стиль
   BuildStylesMenu(StyleMenu1, StyleMenuClick);
-  StylesLoad();
+  StylesLoad(FConfig, StyleMenu1);
 
   FinalizeLoading;
 end;
@@ -2131,7 +2156,7 @@ end;
 
 procedure TSGLMainForm.FormResize(Sender: TObject);
 begin
-  ListView1.Column[0].Width := ListView1.Width - 20;
+  AutoSizeListViewColumns;
   Edit1.Width := Panel4.Width div 2 - 6;
   ComboBox1.Left := Edit1.Width + 6;
   ComboBox1.Width := Edit1.Width;
@@ -2141,6 +2166,8 @@ end;
 //----FORM COMPONENTS----
 //------------------------------------------------------------------------------
 
+//----LISTVIEW----
+//------------------------------------------------------------------------------
 procedure TSGLMainForm.ListView1ContextPopup(Sender: TObject; MousePos: TPoint;
   var Handled: Boolean);
 var
@@ -2155,8 +2182,8 @@ end;
 
 procedure TSGLMainForm.ListView1Data(Sender: TObject; Item: TListItem);
 var
-  G: TGameData;
   RealIndex: Integer;
+  SelectedPlatform: string;
 begin
   if not FLoadingComplete then Exit;
   if (Item.Index < 0) or (Item.Index >= Length(FFilteredIndices)) then Exit;
@@ -2164,9 +2191,14 @@ begin
   RealIndex := FFilteredIndices[Item.Index];
   if (RealIndex < 0) or (RealIndex >= Length(FGameData)) then Exit;
 
-  G := FGameData[RealIndex];
+  Item.Caption := FGameData[RealIndex].GameName;
 
-  Item.Caption := G.GameName;
+  if ListView1.Columns.Count >= 2 then
+  begin
+    SelectedPlatform := TabControl1.Tabs[TabControl1.TabIndex];
+    if SameText(SelectedPlatform, 'All') or SameText(SelectedPlatform, 'Installed') then
+      Item.SubItems.Add(FGameData[RealIndex].Platforms);
+  end;
 end;
 
 procedure TSGLMainForm.ListView1DblClick(Sender: TObject);
@@ -2231,6 +2263,8 @@ begin
   ShowGameByIndex(Item.Index) else ClearGameInfo;
 end;
 
+//----OTHER COMPONENTS----
+//------------------------------------------------------------------------------
 procedure TSGLMainForm.TabControl1Change(Sender: TObject);
 var
   SelectedPlatform: string;
@@ -2272,6 +2306,17 @@ if Visible then
   end;
 end;
 
+procedure TSGLMainForm.ComboBox1Change(Sender: TObject);
+begin
+  ApplyFilters;
+end;
+
+procedure TSGLMainForm.Edit1Change(Sender: TObject);
+begin
+  FSearchText := Edit1.Text;
+  ApplyFilters;
+end;
+
 procedure TSGLMainForm.ScreenShotImageClick(Sender: TObject);
 begin
 if ListView1.ItemIndex = -1 then Exit;
@@ -2284,17 +2329,29 @@ with FullScreenForm do
  end;
 end;
 
-procedure TSGLMainForm.ComboBox1Change(Sender: TObject);
+procedure TSGLMainForm.PrevImgBtnClick(Sender: TObject);
 begin
-  ApplyFilters;
+  if ImgList.Count = 0 then Exit;
+
+  // сдвиг назад с учётом зацикливания
+  ImgCurIndex := ImgCurIndex - 1;
+  if ImgCurIndex < 0 then
+    ImgCurIndex := ImgList.Count - 1;
+
+  LoadImageWithRetry(ImgList[ImgCurIndex], ScreenShotImage);
 end;
 
-procedure TSGLMainForm.Edit1Change(Sender: TObject);
+procedure TSGLMainForm.NextImgBtnClick(Sender: TObject);
 begin
-  FSearchText := Edit1.Text;
-  ApplyFilters;
+  if ImgList.Count = 0 then Exit;
+
+  ImgCurIndex := (ImgCurIndex + 1) mod ImgList.Count;
+
+  LoadImageWithRetry(ImgList[ImgCurIndex], ScreenShotImage);
 end;
 
+//----MENUITEMS----
+//------------------------------------------------------------------------------
 procedure TSGLMainForm.Autostart1Click(Sender: TObject);
 begin
 with Sender as TMenuItem do
@@ -2323,6 +2380,17 @@ with Sender as TMenuItem do
     FConfig.WriteBool('SGAllSettings', 'ShowToolBar', Checked);
     FConfig.UpdateFile;
    end;
+end;
+
+procedure TSGLMainForm.EmptyWorkingSet1Click(Sender: TObject);
+begin
+with Sender as TMenuItem do
+   begin
+    Checked := not Checked;
+    FConfig.WriteBool('SGAllSettings', 'EmptyWorkingSet', Checked);
+    FConfig.UpdateFile;
+   end;
+ShowMessage('Changes will take effect after restarting ' + ExtractFileName(ChangeFileExt(ParamStr(0),'')));
 end;
 
 procedure TSGLMainForm.Specifyfolders1Click(Sender: TObject);
@@ -2411,8 +2479,6 @@ begin
 end;
 
 procedure TSGLMainForm.Manual1Click(Sender: TObject);
-var
-  PathGame: String;
 begin
  if ListView1.ItemIndex <> -1 then
     ShellOpen(LaunchBoxDir +'\'+FGameData[FFilteredIndices[ListView1.ItemIndex]].Manual);
@@ -2450,27 +2516,8 @@ begin
   FGameData[FFilteredIndices[ListView1.ItemIndex]].ApplicationPath, ListView1.Selected.Caption);
 end;
 
-procedure TSGLMainForm.PrevImgBtnClick(Sender: TObject);
-begin
-  if ImgList.Count = 0 then Exit;
-
-  // сдвиг назад с учётом зацикливания
-  ImgCurIndex := ImgCurIndex - 1;
-  if ImgCurIndex < 0 then
-    ImgCurIndex := ImgList.Count - 1;
-
-  LoadImageWithRetry(ImgList[ImgCurIndex], ScreenShotImage);
-end;
-
-procedure TSGLMainForm.NextImgBtnClick(Sender: TObject);
-begin
-  if ImgList.Count = 0 then Exit;
-
-  ImgCurIndex := (ImgCurIndex + 1) mod ImgList.Count;
-
-  LoadImageWithRetry(ImgList[ImgCurIndex], ScreenShotImage);
-end;
-
+//----TOOLBAR----
+//------------------------------------------------------------------------------
 procedure TSGLMainForm.ToolBar1Click(Sender: TObject);
 var
  TempList: TStringList;
@@ -2540,6 +2587,140 @@ begin
 
     alLeft, alRight:
       ToolBar1.Width := 40;
+  end;
+end;
+
+procedure TSGLMainForm.ToolBarMenuClick(Sender: TObject);
+var
+  MenuItem: TMenuItem;
+  Button: TToolButton;
+  Popup: TPopupMenu;
+  Index: WORD;
+  TempList: TStringList;
+  OldHint, DialogDir: String;
+begin
+  if not (Sender is TMenuItem) then Exit;
+  MenuItem := TMenuItem(Sender);
+
+  Popup := TPopupMenu(MenuItem.GetParentMenu);
+  if Popup = nil then Exit;
+
+  if Popup.PopupComponent is TToolButton then
+    Button := TToolButton(Popup.PopupComponent)
+  else
+    Button := nil;
+
+  // ────────────────────── Обработка пунктов меню ──────────────────────
+  if MenuItem.Name = 'miDelete' then
+  begin
+    if Assigned(Button) then
+      DeleteToolButton(ToolBar1, Button.Hint, FConfig, ImageList1, ToolBar1Click);
+  end
+
+  else if MenuItem.Name = 'miAddButton' then
+  begin
+   if OpenDialogEx('Select the executable file', True, DialogDir) then
+    begin
+     with ToolBtnPropertiesForm do
+        begin
+         LNKPROP_EDIT1.EditText := ExtractFileName(ChangeFileExt(DialogDir,''));
+         LNKPROP_EDIT2.EditText := DialogDir;
+         LNKPROP_EDIT3.EditText := '';
+         LNKPROP_EDIT4.EditText := '';
+         LNKPROP_EDIT5.EditText := '';
+         // Загрузка иконки
+          Index := 0;
+          if (LNKPROP_EDIT5.Text = '') and (LNKPROP_EDIT2.Text <> '') then
+            Image1.Picture.Icon.Handle := ExtractAssociatedIcon(hInstance, PChar(LNKPROP_EDIT2.Text), Index)
+          else if LNKPROP_EDIT5.Text <> '' then
+            Image1.Picture.Icon.Handle := ExtractAssociatedIcon(hInstance, PChar(LNKPROP_EDIT5.Text), Index);
+          if ShowModal <> mrCancel then
+           begin
+            // ← СОХРАНЯЕМ новую запись
+            FConfig.WriteString('Toolbar', LNKPROP_EDIT1.EditText,
+              LNKPROP_EDIT2.EditText + '|' + LNKPROP_EDIT3.EditText + '|' +
+              LNKPROP_EDIT4.EditText + '|' +LNKPROP_EDIT5.EditText);
+            FConfig.UpdateFile;
+
+            // ← ПЕРЕЗАГРУЖАЕМ кнопки
+            ToolBar1.AutoSize := False;
+            LoadToolButtons(ToolBar1, FConfig, ImageList1, ToolBar1Click);
+            ToolBar1.AutoSize := True;
+           end;
+        end;
+    end;
+  end
+
+  else if MenuItem.Name = 'miProperties' then
+  begin
+    if Assigned(Button) then
+    begin
+      TempList := TStringList.Create;
+      try
+        // ← СОХРАНЯЕМ старый Hint ДО изменения
+        OldHint := Button.Hint;
+
+        // Разбираем текущие значения кнопки
+        StrToList(FConfig.ReadString('Toolbar', Button.Hint, ''), '|', TempList);
+
+        with ToolBtnPropertiesForm do
+        begin
+          Caption := Button.Hint;
+          LNKPROP_EDIT1.EditText := Button.Hint;
+
+          // ← Проверка и заполнение полей
+          if TempList.Count >= 1 then
+            LNKPROP_EDIT2.EditText := TempList[0]
+          else
+            LNKPROP_EDIT2.EditText := '';
+
+          if TempList.Count >= 2 then
+            LNKPROP_EDIT3.EditText := TempList[1]
+          else
+            LNKPROP_EDIT3.EditText := '';
+
+          if TempList.Count >= 3 then
+            LNKPROP_EDIT4.EditText := TempList[2]
+          else
+            LNKPROP_EDIT4.EditText := '';
+
+          if TempList.Count >= 4 then
+            LNKPROP_EDIT5.EditText := TempList[3]
+          else
+            LNKPROP_EDIT5.EditText := '';
+
+          // Загрузка иконки
+          Index := 0;
+          if (LNKPROP_EDIT5.Text = '') and (LNKPROP_EDIT2.Text <> '') then
+            Image1.Picture.Icon.Handle := ExtractAssociatedIcon(hInstance, PChar(LNKPROP_EDIT2.Text), Index)
+          else if LNKPROP_EDIT5.Text <> '' then
+            Image1.Picture.Icon.Handle := ExtractAssociatedIcon(hInstance, PChar(LNKPROP_EDIT5.Text), Index);
+
+          // ← Показываем диалог
+          if ShowModal <> mrCancel then
+          begin
+            // ← УДАЛЯЕМ старую запись (используем сохранённый OldHint)
+            if OldHint <> LNKPROP_EDIT1.EditText then
+              FConfig.DeleteKey('Toolbar', OldHint);
+
+            // ← СОХРАНЯЕМ новую запись
+            FConfig.WriteString('Toolbar', LNKPROP_EDIT1.EditText,
+              LNKPROP_EDIT2.EditText + '|' +
+              LNKPROP_EDIT3.EditText + '|' +
+              LNKPROP_EDIT4.EditText + '|' +
+              LNKPROP_EDIT5.EditText);
+            FConfig.UpdateFile;
+
+            // ← ПЕРЕЗАГРУЖАЕМ кнопки
+            ToolBar1.AutoSize := False;
+            LoadToolButtons(ToolBar1, FConfig, ImageList1, ToolBar1Click);
+            ToolBar1.AutoSize := True;
+          end;
+        end;
+      finally
+        TempList.Free;
+      end;
+    end;
   end;
 end;
 

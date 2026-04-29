@@ -16,8 +16,7 @@ uses
   Help in 'Help.pas' {HelpForm},
   ToolBtnProperties in 'ToolBtnProperties.pas' {ToolBtnPropertiesForm},
   SystemUtils in 'SystemUtils.pas',
-  ToolBars in 'ToolBars.pas',
-  Snake in 'Snake.pas';
+  ToolBars in 'ToolBars.pas';
 
 {$R *.res}
 {$SETPEFLAGS IMAGE_FILE_RELOCS_STRIPPED} //Удаление из exe таблицы релокаций.

@@ -177,7 +177,6 @@
         </DCCReference>
         <DCCReference Include="SystemUtils.pas"/>
         <DCCReference Include="ToolBars.pas"/>
-        <DCCReference Include="Snake.pas"/>
         <RcItem Include="Icon2.ico">
             <ResourceType>ICON</ResourceType>
             <ResourceId>OnLoadIcon</ResourceId>

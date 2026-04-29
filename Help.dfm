@@ -14,14 +14,13 @@ object HelpForm: THelpForm
   Font.Name = 'Segoe UI'
   Font.Style = []
   ShowHint = True
-  OnClose = FormClose
   TextHeight = 13
   object HELPFORM_PAGECTRL1: TPageControl
     Left = 0
     Top = 0
     Width = 635
     Height = 441
-    ActivePage = TabSheet1
+    ActivePage = TabSheet2
     Align = alClient
     TabOrder = 0
     TabStop = False
@@ -73,20 +72,7 @@ object HelpForm: THelpForm
         Top = 78
         Width = 260
         Height = 260
-        OnClick = PaintBox1Click
         OnPaint = PaintBox1Paint
-      end
-      object Label4: TLabel
-        Left = 57
-        Top = 342
-        Width = 260
-        Height = 51
-        AutoSize = False
-        Caption = 
-          'To control the snake, press WASD.'#13#10'Press the Pause key to pause ' +
-          'or resume the game.'#13#10'Space to restart the game after it ends.'
-        Visible = False
-        WordWrap = True
       end
       object Label5: TLabel
         Left = 368
@@ -174,6 +160,43 @@ object HelpForm: THelpForm
             'OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DE' +
             'ALINGS IN THE'
           'SOFTWARE.')
+        ReadOnly = True
+        TabOrder = 0
+      end
+    end
+    object TabSheet2: TTabSheet
+      Caption = 'Information'
+      ImageIndex = 2
+      object Memo2: TMemo
+        Left = 0
+        Top = 0
+        Width = 627
+        Height = 413
+        Align = alClient
+        Lines.Strings = (
+          
+            '// -------------------------------------------------------------' +
+            '--------Installed games-----------------------------------------' +
+            '------------------'
+          
+            '   To correctly display installed games, you need to specify the' +
+            ' game folders (Tray Menu '#8594' Options '#8594' Specify Folders), '
+          'you can select only the folders you use or add all of them:'
+          ''
+          '!dos;!win3x;!win9x;!IF;!appleiigs;!DREAMM;!ScummVM;!demoscn'
+          ''
+          
+            '// -------------------------------------------------------------' +
+            '--------Language pack-------------------------------------------' +
+            '----------------'
+          
+            '   To correctly display language pack, you need to specify the g' +
+            'ame folders (Tray Menu '#8594' Options '#8594' Specify languages '
+          
+            'folders), if you don'#39't use any language pack, leave the field bl' +
+            'ank:'
+          ''
+          '!german;!spanish;!polish')
         ReadOnly = True
         TabOrder = 0
       end
