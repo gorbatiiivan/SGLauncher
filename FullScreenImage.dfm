@@ -53,6 +53,7 @@ object FullScreenForm: TFullScreenForm
     Font.Style = []
     ParentColor = False
     ParentFont = False
+    ShowAccelChar = False
     ExplicitWidth = 5
   end
 end

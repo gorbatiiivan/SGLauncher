@@ -51,10 +51,10 @@ begin
       if idx < SGLMainForm.ListView1.Items.Count - 1 then Inc(idx);
 
     VK_LEFT:
-      SGLMainForm.PrevImgBtnClick(Sender);   // ? предыдущее
+      SGLMainForm.PrevImgBtnClick(Sender);   // предыдущее
 
     VK_RIGHT:
-      SGLMainForm.NextImgBtnClick(Sender);   // ? следующее
+      SGLMainForm.NextImgBtnClick(Sender);   // следующее
 
     VK_RETURN:
      begin

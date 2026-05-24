@@ -9,7 +9,7 @@ uses Windows, Classes, SysUtils, ActiveX, ShlObj, Vcl.Dialogs, ShellApi, ExtCtrl
 // GENERAL FUNCTIONS
 // ---------------------------------------------------------------------------
 function GetExecPath: String;
-function ShellOpen(const FileName: string): Boolean;
+function ShellOpen(const FileName: string; const Parameters: string = ''): Boolean;
 procedure StrToList(const S, Sign: string; SList: TStrings);
 function LoadIconFromRCDATA(const ResourceName: string): TIcon;
 procedure ResizeLabelToText(ALabel: TLabel);
@@ -38,11 +38,10 @@ implementation
 
 function GetExecPath: String;
 begin
-  SetCurrentDir(IncludeTrailingPathDelimiter(ExtractFileDir(ExtractFileDir(ParamStr(0)))));
   Result := IncludeTrailingPathDelimiter(ExtractFileDir(ExtractFileDir(ParamStr(0))));
 end;
 
-function ShellOpen(const FileName: string): Boolean;
+function ShellOpen(const FileName: string; const Parameters: string = ''): Boolean;
 const
   ERR_MSG: array[0..31] of string = (
     '', 'File not found', 'Path not found', '', 'Access denied', '', '', 'Out of memory',
@@ -52,19 +51,32 @@ const
 var
   Res: HINST;
   s: string;
+  CurrentDir: string;
 begin
-  Res := ShellExecute(0, 'open', PChar(FileName), nil, PChar(ExtractFilePath(FileName)), SW_SHOWNORMAL);
+  // Save current directory
+  CurrentDir := GetCurrentDir;
 
-  Result := Res > 32;
-  if Result then Exit;
+  try
+    // Set working directory to the executable's path
+    SetCurrentDir(ExtractFilePath(FileName));
 
-  if (Res >= Low(ERR_MSG)) and (Res <= High(ERR_MSG)) and (ERR_MSG[Res] <> '') then
-    s := ERR_MSG[Res]
-  else
-    s := Format('Error %d', [Res]);
+    // Execute the file
+    Res := ShellExecute(0, 'open', PChar(FileName), PChar(Parameters), PChar(ExtractFilePath(FileName)), SW_SHOWNORMAL);
 
-  MessageDlg('Failed to open:' + #13#10 + FileName + #13#10#13#10 + s,
-    mtError, [mbOK], 0);
+    Result := Res > 32;
+    if Result then Exit;
+
+    if (Res >= Low(ERR_MSG)) and (Res <= High(ERR_MSG)) and (ERR_MSG[Res] <> '') then
+      s := ERR_MSG[Res]
+    else
+      s := Format('Error %d', [Res]);
+
+    MessageDlg('Failed to open:' + #13#10 + FileName + #13#10#13#10 + s,
+      mtError, [mbOK], 0);
+  finally
+    // Restore original directory
+    SetCurrentDir(CurrentDir);
+  end;
 end;
 
 procedure StrToList(const S, Sign: string; SList: TStrings);

@@ -30,15 +30,14 @@ object SGLMainForm: TSGLMainForm
     object Splitter1: TSplitter
       Left = 313
       Top = 6
+      Width = 7
       Height = 691
       OnAfterResize = FormResize
-      ExplicitTop = 22
-      ExplicitHeight = 740
     end
     object Panel1: TPanel
-      Left = 316
+      Left = 320
       Top = 6
-      Width = 631
+      Width = 627
       Height = 691
       Align = alClient
       BevelOuter = bvNone
@@ -46,20 +45,18 @@ object SGLMainForm: TSGLMainForm
       object Splitter2: TSplitter
         Left = 0
         Top = 421
-        Width = 631
-        Height = 3
+        Width = 627
+        Height = 7
         Cursor = crVSplit
         Align = alTop
         OnAfterResize = FormResize
-        ExplicitLeft = -3
-        ExplicitTop = 412
-        ExplicitWidth = 637
+        ExplicitWidth = 631
       end
       object Panel2: TPanel
         Left = 0
-        Top = 424
-        Width = 631
-        Height = 267
+        Top = 428
+        Width = 627
+        Height = 263
         Align = alClient
         BevelOuter = bvNone
         TabOrder = 0
@@ -67,8 +64,8 @@ object SGLMainForm: TSGLMainForm
           AlignWithMargins = True
           Left = 97
           Top = 3
-          Width = 437
-          Height = 261
+          Width = 433
+          Height = 134
           Margins.Left = 55
           Margins.Right = 55
           Align = alClient
@@ -82,10 +79,10 @@ object SGLMainForm: TSGLMainForm
           ExplicitHeight = 226
         end
         object NextImgBtn: TSpeedButton
-          Left = 589
+          Left = 585
           Top = 0
           Width = 42
-          Height = 267
+          Height = 140
           Align = alRight
           Caption = '>'
           Enabled = False
@@ -104,7 +101,7 @@ object SGLMainForm: TSGLMainForm
           Left = 0
           Top = 0
           Width = 42
-          Height = 267
+          Height = 140
           Align = alLeft
           Caption = '<'
           Enabled = False
@@ -118,12 +115,48 @@ object SGLMainForm: TSGLMainForm
           OnClick = PrevImgBtnClick
           ExplicitHeight = 316
         end
+        object Splitter3: TSplitter
+          Left = 0
+          Top = 140
+          Width = 627
+          Height = 7
+          Cursor = crVSplit
+          Align = alBottom
+          OnMoved = Splitter3Moved
+          ExplicitTop = 144
+          ExplicitWidth = 631
+        end
+        object ScrollBox2: TScrollBox
+          AlignWithMargins = True
+          Left = 55
+          Top = 150
+          Width = 517
+          Height = 110
+          Margins.Left = 55
+          Margins.Right = 55
+          HorzScrollBar.Style = ssHotTrack
+          HorzScrollBar.Tracking = True
+          VertScrollBar.Visible = False
+          Align = alBottom
+          BorderStyle = bsNone
+          TabOrder = 0
+          UseWheelForScrolling = True
+          object FlowPanel1: TFlowPanel
+            Left = 6
+            Top = 24
+            Width = 299
+            Height = 65
+            AutoSize = True
+            BevelOuter = bvNone
+            TabOrder = 0
+          end
+        end
       end
       object ScrollBox1: TScrollBox
         AlignWithMargins = True
         Left = 6
         Top = 6
-        Width = 619
+        Width = 615
         Height = 409
         Margins.Left = 6
         Margins.Top = 6
@@ -141,7 +174,7 @@ object SGLMainForm: TSGLMainForm
           AlignWithMargins = True
           Left = 14
           Top = 206
-          Width = 599
+          Width = 595
           Height = 42
           Margins.Left = 14
           Margins.Top = 6
@@ -155,6 +188,7 @@ object SGLMainForm: TSGLMainForm
           Font.Name = 'Segoe UI'
           Font.Style = []
           ParentFont = False
+          ShowAccelChar = False
           WordWrap = True
           ExplicitTop = 223
           ExplicitWidth = 608
@@ -162,7 +196,7 @@ object SGLMainForm: TSGLMainForm
         object InfoPanel: TPanel
           Left = 0
           Top = 0
-          Width = 619
+          Width = 615
           Height = 200
           Align = alTop
           BevelOuter = bvNone
@@ -171,7 +205,7 @@ object SGLMainForm: TSGLMainForm
             AlignWithMargins = True
             Left = 14
             Top = 3
-            Width = 602
+            Width = 598
             Height = 32
             Margins.Left = 14
             Align = alTop
@@ -181,63 +215,80 @@ object SGLMainForm: TSGLMainForm
             Font.Name = 'Segoe UI'
             Font.Style = []
             ParentFont = False
+            ShowAccelChar = False
             ExplicitWidth = 7
           end
           object DeveloperLabel: TLabel
             AlignWithMargins = True
             Left = 14
             Top = 41
-            Width = 602
+            Width = 598
             Height = 15
             Margins.Left = 14
             Align = alTop
+            ShowAccelChar = False
             ExplicitWidth = 3
           end
           object PublisherLabel: TLabel
             AlignWithMargins = True
             Left = 14
             Top = 62
-            Width = 602
+            Width = 598
             Height = 15
             Margins.Left = 14
             Align = alTop
+            ShowAccelChar = False
             ExplicitWidth = 3
           end
           object GenreLabel: TLabel
             AlignWithMargins = True
             Left = 14
             Top = 83
-            Width = 602
+            Width = 598
             Height = 15
             Margins.Left = 14
             Align = alTop
+            ShowAccelChar = False
             ExplicitWidth = 3
           end
           object SeriesLabel: TLabel
             AlignWithMargins = True
             Left = 14
             Top = 104
-            Width = 602
+            Width = 598
             Height = 15
             Margins.Left = 14
             Align = alTop
+            ShowAccelChar = False
             ExplicitWidth = 3
           end
           object PlatformLabel: TLabel
             AlignWithMargins = True
             Left = 14
             Top = 125
-            Width = 602
+            Width = 598
             Height = 15
             Margins.Left = 14
             Align = alTop
+            ShowAccelChar = False
             ExplicitWidth = 3
           end
           object ReleaseLabel: TLabel
             AlignWithMargins = True
             Left = 14
             Top = 146
-            Width = 602
+            Width = 598
+            Height = 15
+            Margins.Left = 14
+            Align = alTop
+            ShowAccelChar = False
+            ExplicitWidth = 3
+          end
+          object PlayModeLabel: TLabel
+            AlignWithMargins = True
+            Left = 14
+            Top = 167
+            Width = 598
             Height = 15
             Margins.Left = 14
             Align = alTop
@@ -264,9 +315,9 @@ object SGLMainForm: TSGLMainForm
       TabOrder = 1
       object ListView1: TListView
         Left = 0
-        Top = 34
+        Top = 62
         Width = 309
-        Height = 657
+        Height = 629
         Align = alClient
         BorderStyle = bsNone
         Columns = <
@@ -289,7 +340,7 @@ object SGLMainForm: TSGLMainForm
         ParentFont = False
         PopupMenu = PopupMenu1
         ShowColumnHeaders = False
-        TabOrder = 0
+        TabOrder = 2
         ViewStyle = vsReport
         OnContextPopup = ListView1ContextPopup
         OnData = ListView1Data
@@ -305,14 +356,14 @@ object SGLMainForm: TSGLMainForm
         Height = 34
         Align = alTop
         BevelOuter = bvNone
-        TabOrder = 1
+        TabOrder = 0
         object ComboBox1: TComboBox
-          Left = 135
+          Left = 0
           Top = 2
-          Width = 174
+          Width = 154
           Height = 28
           Style = csDropDownList
-          DropDownCount = 25
+          DropDownCount = 35
           Enabled = False
           Font.Charset = DEFAULT_CHARSET
           Font.Color = clWindowText
@@ -323,11 +374,14 @@ object SGLMainForm: TSGLMainForm
           TabOrder = 0
           OnChange = ComboBox1Change
         end
-        object Edit1: TEdit
-          Left = 2
+        object ComboBox2: TComboBox
+          Left = 160
           Top = 2
-          Width = 127
+          Width = 141
           Height = 28
+          Style = csDropDownList
+          DropDownCount = 35
+          DropDownWidth = 174
           Enabled = False
           Font.Charset = DEFAULT_CHARSET
           Font.Color = clWindowText
@@ -336,8 +390,24 @@ object SGLMainForm: TSGLMainForm
           Font.Style = []
           ParentFont = False
           TabOrder = 1
-          OnChange = Edit1Change
+          OnChange = ComboBox2Change
         end
+      end
+      object Edit1: TEdit
+        Left = 0
+        Top = 34
+        Width = 309
+        Height = 28
+        Align = alTop
+        Enabled = False
+        Font.Charset = DEFAULT_CHARSET
+        Font.Color = clWindowText
+        Font.Height = -15
+        Font.Name = 'Segoe UI'
+        Font.Style = []
+        ParentFont = False
+        TabOrder = 1
+        OnChange = Edit1Change
       end
     end
   end
@@ -463,6 +533,10 @@ object SGLMainForm: TSGLMainForm
       object EmptyWorkingSet1: TMenuItem
         Caption = 'EmptyWorkingSet'
         OnClick = EmptyWorkingSet1Click
+      end
+      object Enabledimagegallery1: TMenuItem
+        Caption = 'Enabled image gallery'
+        OnClick = Enabledimagegallery1Click
       end
       object N5: TMenuItem
         Caption = '-'

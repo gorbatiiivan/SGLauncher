@@ -196,7 +196,14 @@ object HelpForm: THelpForm
             'folders), if you don'#39't use any language pack, leave the field bl' +
             'ank:'
           ''
-          '!german;!spanish;!polish')
+          '!german;!spanish;!polish'
+          ''
+          
+            '// -------------------------------------------------------------' +
+            '----------Installation------------------------------------------' +
+            '-------------------'
+          ''
+          'Move the SGLauncher folder to your LaunchBox folder.')
         ReadOnly = True
         TabOrder = 0
       end
