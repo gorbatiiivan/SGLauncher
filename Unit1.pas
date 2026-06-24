@@ -12,7 +12,9 @@ uses
   System.Generics.Defaults;
 
 const
-  sReleaseDate = '25.05.2026';
+  sReleaseDate = '25.06.2026';
+  //Бинарный кэш для игр
+  CACHE_VERSION: Word = 1;
 
 type
   TGameData = record
@@ -100,6 +102,9 @@ type
     Splitter3: TSplitter;
     Edit1: TEdit;
     ComboBox2: TComboBox;
+    Multilinetabs1: TMenuItem;
+    UseBinaryCache1: TMenuItem;
+    Core1: TMenuItem;
     procedure FormResize(Sender: TObject);
     procedure ListView1Data(Sender: TObject; Item: TListItem);
     procedure ListView1SelectItem(Sender: TObject; Item: TListItem; Selected: Boolean);
@@ -137,6 +142,11 @@ type
     procedure Enabledimagegallery1Click(Sender: TObject);
     procedure Splitter3Moved(Sender: TObject);
     procedure ComboBox2Change(Sender: TObject);
+    procedure DeveloperLabelMouseEnter(Sender: TObject);
+    procedure DeveloperLabelMouseLeave(Sender: TObject);
+    procedure DeveloperLabelClick(Sender: TObject);
+    procedure Multilinetabs1Click(Sender: TObject);
+    procedure UseBinaryCache1Click(Sender: TObject);
   private
     NConfig: TMemIniFile;
     FClosing: Boolean;
@@ -211,7 +221,7 @@ type
     procedure FillGenreSeriesCombo(const PlatformFilter: string);
     procedure FillFilterValues;
     procedure InitializePlatformTabs;
-    procedure FinalizeLoading;
+    procedure FinalizeLoading(ADeleteCache: Boolean = False);
     procedure UpdateExtrasMenu(const GameIndex: Integer);
     procedure ClearGameInfo;
     procedure UpdateGenreSeriesComboForCurrentPlatform;
@@ -240,6 +250,10 @@ type
     procedure SyncThumbnailSelection;
     procedure WMPostScrollSync(var Msg: TMessage); message WM_USER + 100;
     procedure ResizeThumbnail(Pnl: TPanel; const FilePath: string);
+    //Бинарный кэш для спискок игр
+    function  IsCacheValid(const CacheFile, XMLDir: string): Boolean;
+    procedure SaveGameCache(const CacheFile: string; const XMLFiles: TStringDynArray);
+    function  LoadGameCache(const CacheFile: string): Boolean;
     //----------------------
     function GetFConfig: TMemIniFile;
     function GetNConfig: TMemIniFile;
@@ -247,6 +261,9 @@ type
     procedure OnExtrasMenuItemClick(Sender: TObject);
     procedure StyleMenuClick(Sender: TObject);
     procedure ToolBarMenuClick(Sender: TObject);
+    // Переключение фильтр по информационным лейблам
+    procedure ApplyLabelFilter(const Category: string; const Value: string);
+    procedure LabelFilterMenuItemClick(Sender: TObject);
     //----------------------
     procedure WMCopyData(var Msg: TWMCopyData); message WM_COPYDATA;
    public
@@ -773,7 +790,7 @@ begin
     // === Жанры ===
     if FGameData[i].Genre <> '' then
     begin
-      GameGenres := FGameData[i].Genre.Split([';', '/']);
+      GameGenres := FGameData[i].Genre.Split([';'{, '/'}]);
       for j := 0 to High(GameGenres) do
       begin
         GameGenres[j] := Trim(GameGenres[j]);
@@ -785,7 +802,7 @@ begin
     // === Серии ===
     if FGameData[i].Series <> '' then
     begin
-      GameSeries := FGameData[i].Series.Split([';', '/']);
+      GameSeries := FGameData[i].Series.Split([';'{, '/'}]);
       for j := 0 to High(GameSeries) do
       begin
         GameSeries[j] := Trim(GameSeries[j]);
@@ -876,8 +893,8 @@ begin
          not FGameData[i].IsInstalled then Continue;
 
       case ComboBox1.ItemIndex of
-        0: Parts := FGameData[i].Genre.Split([';','/']);
-        1: Parts := FGameData[i].Series.Split([';','/']);
+        0: Parts := FGameData[i].Genre.Split([';'{,'/'}]);
+        1: Parts := FGameData[i].Series.Split([';'{,'/'}]);
         2: Parts := FGameData[i].Developer.Split([';']);
         3: Parts := FGameData[i].Publisher.Split([';']);
         4: Parts := FGameData[i].PlayMode.Split([';']);
@@ -942,43 +959,76 @@ begin
   end;
 end;
 
-procedure TSGLMainForm.FinalizeLoading;
+procedure TSGLMainForm.FinalizeLoading(ADeleteCache: Boolean = False);
 var
   PlatformsDir: string;
+  CacheFile: string;
   XMLFiles: TStringDynArray;
   SavedTab: string;
   TabIdx: Integer;
 begin
   PlatformsDir := LaunchBoxDir + '\Data\Platforms\';
 
-  // === НЕТ ПАПКИ ===
-  if not TDirectory.Exists(PlatformsDir) then
+  // 1. При вызове через F5/меню — защита от двойного вызова
+  if ADeleteCache then
   begin
-    TrayIcon.Icon := Application.Icon;
-    SGLMainForm.Icon := Application.Icon;
-    Caption := 'Folder not found';
-    TrayIcon.Hint := Caption;
-    Exit;
+    if FClosing or (csDestroying in ComponentState) or not FLoadingComplete then Exit;
+    if Assigned(FLoaderThread) and not FLoaderThread.Finished then Exit;
   end;
 
-  // === НЕТ XML ФАЙЛОВ ===
-  XMLFiles := TDirectory.GetFiles(PlatformsDir, '*.xml',
-                                 TSearchOption.soTopDirectoryOnly);
-  if Length(XMLFiles) = 0 then
+  // 2. При старте — проверяем наличие папки и XML
+  if not ADeleteCache then
   begin
-    TrayIcon.Icon := Application.Icon;
-    SGLMainForm.Icon := Application.Icon;
-    Caption := 'No XML files';
-    TrayIcon.Hint := Caption;
-    Exit;
+    if not TDirectory.Exists(PlatformsDir) then
+    begin
+      TrayIcon.Icon := Application.Icon;
+      SGLMainForm.Icon := Application.Icon;
+      Caption := 'Folder not found';
+      TrayIcon.Hint := Caption;
+      Exit;
+    end;
+
+    XMLFiles := TDirectory.GetFiles(PlatformsDir, '*.xml', TSearchOption.soTopDirectoryOnly);
+    if Length(XMLFiles) = 0 then
+    begin
+      TrayIcon.Icon := Application.Icon;
+      SGLMainForm.Icon := Application.Icon;
+      Caption := 'No XML files';
+      TrayIcon.Hint := Caption;
+      Exit;
+    end;
   end;
 
-  // ====== СТАРАЯ ЛОГИКА ======
+  // 3. Общая подготовка UI
   FClosing := False;
   FLoadingComplete := False;
-  Caption := 'Loading...';
+  UseBinaryCache1.Enabled := False;
+
+  if ADeleteCache then
+  begin
+    // 4a. Режим пересоздания кэша (F5 / меню)
+    ClearGameInfo;
+    ListView1.Items.Count := 0;
+    Caption := 'Refreshing database...';
+
+    // 5. Удаляем .bin чтобы ScanXMLFromDir пересоздал его
+    CacheFile := ExtractFilePath(ParamStr(0)) + ExtractFileName(ChangeFileExt(ParamStr(0), '.bin'));
+    if FileExists(CacheFile) then
+      try
+        TFile.Delete(CacheFile);
+      except
+        // ignore
+      end;
+  end
+  else
+  begin
+    // 4b. Режим первого запуска
+    Caption := 'Loading...';
+  end;
+
   TrayIcon.Hint := Caption;
 
+  // 6. Запускаем поток загрузки
   FLoaderThread := TThread.CreateAnonymousThread(
     procedure
     begin
@@ -989,30 +1039,30 @@ begin
 
         if TThread.CurrentThread.CheckTerminated or FClosing then Exit;
 
+        // 7. Восстанавливаем UI в главном потоке
         TThread.Queue(nil,
           procedure
           begin
             if FClosing or (csDestroying in ComponentState) then Exit;
 
-            // Разблокируем контролы
             Edit1.Enabled := True;
             ComboBox1.Enabled := True;
             ComboBox2.Enabled := True;
             ScrollBox1.Enabled := True;
             NextImgBtn.Enabled := True;
+            UseBinaryCache1.Enabled := True;
             TrayIcon.Icon := Application.Icon;
             SGLMainForm.Icon := Application.Icon;
 
-            InitializePlatformTabs; // строятся вкладки
-            FLoadingComplete := True; // разрешаем фильтрацию
-            // Загрузка последней сохраненной вкладке
+            InitializePlatformTabs;
+            FLoadingComplete := True;
+
             SavedTab := FConfig.ReadString('SGAllSettings', 'LastTab', 'All');
             TabIdx := TabControl1.Tabs.IndexOf(SavedTab);
             if TabIdx < 0 then TabIdx := TabControl1.Tabs.IndexOf('All');
             if TabIdx < 0 then TabIdx := 0;
             TabControl1.TabIndex := TabIdx;
 
-            // Замораживаем отрисовку на время настройки колонок и фильтрации
             SendMessage(ListView1.Handle, WM_SETREDRAW, WPARAM(False), 0);
             try
               SetupListViewColumns;
@@ -1027,27 +1077,25 @@ begin
             end;
 
             if FConfig.ReadBool('SGAllSettings', 'EmptyWorkingSet', False) then
-            if Win32Platform = VER_PLATFORM_WIN32_NT then
-             begin
-              EmptyWorkingSet(GetCurrentProcess);
-              SetProcessWorkingSetSize(GetCurrentProcess, SIZE_T(-1), SIZE_T(-1));
-             end;
+              if Win32Platform = VER_PLATFORM_WIN32_NT then
+              begin
+                EmptyWorkingSet(GetCurrentProcess);
+                SetProcessWorkingSetSize(GetCurrentProcess, SIZE_T(-1), SIZE_T(-1));
+              end;
 
-            Caption := Format('%s %d', [TabControl1.Tabs[TabControl1.TabIndex]+' - ', Length(FFilteredIndices)]);
+            Caption := Format('%s %d', [TabControl1.Tabs[TabControl1.TabIndex] + ' - ', Length(FFilteredIndices)]);
             if Length(FGameData) <> Length(FFilteredIndices) then
               Caption := Caption + Format(' / %d', [Length(FGameData)]);
             TrayIcon.Hint := Caption;
 
-            // Выделяем первую игру
             ActiveControl := ListView1;
             if ListView1.Items.Count > 0 then
-             begin
+            begin
               ListView1.ItemIndex := 0;
               ListView1.Selected := ListView1.Items[0];
               ListView1.Selected.MakeVisible(False);
-             end;
-          end
-        );
+            end;
+          end);
       finally
         CoUninitialize;
       end;
@@ -1091,12 +1139,12 @@ begin
       case ComboBox1.ItemIndex of
         0: // Genre
           if FGameData[i].Genre <> '' then
-            for var g in FGameData[i].Genre.Split([';','/']) do
+            for var g in FGameData[i].Genre.Split([';'{,'/'}]) do
               if SameText(Trim(g), FilterValue) then begin Match := True; Break; end;
 
         1: // Series
           if FGameData[i].Series <> '' then
-            for var s in FGameData[i].Series.Split([';','/']) do
+            for var s in FGameData[i].Series.Split([';'{,'/'}]) do
               if SameText(Trim(s), FilterValue) then begin Match := True; Break; end;
 
         2: // Developer
@@ -1635,11 +1683,15 @@ end;
 procedure TSGLMainForm.ScanXMLFromDir(const Dir: string);
 var
   XMLFiles: TStringDynArray;
+  CacheFile: string;
   i: Integer;
+  UseBinaryCache: Boolean;
 begin
   FActualGameCount := 0;
   SetLength(FGameData, 4096);
   FGameDict.Clear;
+
+  CacheFile := ExtractFilePath(ParamStr(0)) + ExtractFileName(ChangeFileExt(ParamStr(0),'.bin'));
 
   XMLFiles := TDirectory.GetFiles(Dir, '*.xml', TSearchOption.soTopDirectoryOnly);
   FTotalXMLFiles := Length(XMLFiles);
@@ -1651,18 +1703,45 @@ begin
     Exit;
   end;
 
-  LoadXMLFilesMultiThreaded(XMLFiles);
+  UseBinaryCache := FConfig.ReadBool('SGAllSettings', 'UseBinaryCache', True);
 
-  SetLength(FGameData, FActualGameCount);
+  // ← Пробуем загрузить из кэша
+  if UseBinaryCache and IsCacheValid(CacheFile, Dir) and LoadGameCache(CacheFile) then
+  begin
+    TThread.Queue(nil, procedure begin
+      if not FClosing then Caption := 'Loaded from cache...';
+    end);
+  end
+  else
+  begin
+    LoadXMLFilesMultiThreaded(XMLFiles);
+    SetLength(FGameData, FActualGameCount);
+    FGameDict.Clear;
+    FGameDict.TrimExcess;
+    if Length(FGameData) > 1 then
+      SortGameData;
+    // Сохраняем кэш только если режим бинарного кэша включён
+    if UseBinaryCache then
+    begin
+      SaveGameCache(CacheFile, XMLFiles);
+      // Перезапускаемся только при первом создании кэша
+      if not FLoadingComplete then
+      begin
+        TThread.Queue(nil,
+          procedure
+          begin
+           if MessageDlg('The application needs to restart to apply the changes. Restart now?',
+                mtConfirmation, [mbYes, mbNo], 0) = mrYes then
+            begin
+             RegIni(True);
+             RestartApplication(FClosing);
+            end;
+          end);
+      end;
+    end;
+  end;
 
-  FGameDict.Clear;
-  FGameDict.TrimExcess;
-
-  if Length(FGameData) > 1 then
-    SortGameData;
-
-  // === Кэшируем IsInstalled один раз в фоновом потоке ===
-  // Создаём LanguagesPack один раз для всех игр — не в каждом вызове
+  // IsInstalled — всегда проверяем по файловой системе (не кэшируем)
   var SharedLP := TStringList.Create;
   try
     SharedLP.Delimiter := ';';
@@ -1673,7 +1752,6 @@ begin
   finally
     SharedLP.Free;
   end;
-  // ======================================================
 
   SetLength(FFilteredIndices, Length(FGameData));
   for i := 0 to High(FGameData) do
@@ -2742,6 +2820,199 @@ begin
   end;
 end;
 
+// Бинарный кэш для спискок игр
+// Возвращает True если кэш существует и все XML не изменились с момента его создания
+function TSGLMainForm.IsCacheValid(const CacheFile, XMLDir: string): Boolean;
+var
+  CacheAge: TDateTime;
+  XMLFiles: TStringDynArray;
+  F: string;
+  S: TFileStream;
+  Ver: Word;
+  SavedCount, i: Integer;
+  SavedNames: TStringList;
+  function ReadStr: string;
+  var B: TBytes; Len: Word;
+  begin
+    S.ReadBuffer(Len, SizeOf(Len));
+    SetLength(B, Len);
+    if Len > 0 then S.ReadBuffer(B[0], Len);
+    Result := TEncoding.UTF8.GetString(B);
+  end;
+begin
+  Result := False;
+  if not FileExists(CacheFile) then Exit;
+
+  XMLFiles := TDirectory.GetFiles(XMLDir, '*.xml', TSearchOption.soTopDirectoryOnly);
+  if Length(XMLFiles) = 0 then Exit;
+
+  // 1. Проверка дат — любой XML новее кэша → пересоздаём
+  CacheAge := TFile.GetLastWriteTime(CacheFile);
+  for F in XMLFiles do
+    if TFile.GetLastWriteTime(F) > CacheAge then Exit;
+
+  // 2. Проверка списка файлов — считываем сохранённые имена из кэша
+  SavedNames := TStringList.Create;
+  try
+    try
+      S := TFileStream.Create(CacheFile, fmOpenRead or fmShareDenyWrite);
+      try
+        S.ReadBuffer(Ver, SizeOf(Ver));
+        if Ver <> CACHE_VERSION then Exit;
+
+        S.ReadBuffer(SavedCount, SizeOf(SavedCount));
+        for i := 0 to SavedCount - 1 do
+          SavedNames.Add(LowerCase(ReadStr));
+      finally
+        S.Free;
+      end;
+    except
+      Exit; // битый кэш
+    end;
+
+    // Разное количество → точно изменилось
+    if SavedCount <> Length(XMLFiles) then Exit;
+
+    // Проверяем что каждый текущий XML был в кэше
+    for F in XMLFiles do
+      if SavedNames.IndexOf(LowerCase(ExtractFileName(F))) < 0 then
+        Exit;
+
+  finally
+    SavedNames.Free;
+  end;
+
+  Result := True;
+end;
+
+// Сохраняем FGameData (без IsInstalled) в бинарный файл
+procedure TSGLMainForm.SaveGameCache(const CacheFile: string;
+  const XMLFiles: TStringDynArray);
+var
+  S: TFileStream;
+  Count, i: Integer;
+  FileCount: Integer;
+  procedure WriteStr(const V: string);
+  var B: TBytes; Len: Word;
+  begin
+    B := TEncoding.UTF8.GetBytes(V);
+    Len := Length(B);
+    S.WriteBuffer(Len, SizeOf(Len));
+    if Len > 0 then S.WriteBuffer(B[0], Len);
+  end;
+begin
+  try
+    S := TFileStream.Create(CacheFile, fmCreate);
+    try
+      S.WriteBuffer(CACHE_VERSION, SizeOf(CACHE_VERSION));
+
+      // Список XML-файлов (только имена, без пути)
+      FileCount := Length(XMLFiles);
+      S.WriteBuffer(FileCount, SizeOf(FileCount));
+      for i := 0 to FileCount - 1 do
+        WriteStr(ExtractFileName(XMLFiles[i]));
+
+      // Данные игр
+      Count := FActualGameCount;
+      S.WriteBuffer(Count, SizeOf(Count));
+      for i := 0 to Count - 1 do
+      begin
+        WriteStr(FGameData[i].GameName);
+        WriteStr(FGameData[i].ApplicationPath);
+        WriteStr(FGameData[i].Platforms);
+        S.WriteBuffer(FGameData[i].ReleaseYear, SizeOf(SmallInt));
+        WriteStr(FGameData[i].Developer);
+        WriteStr(FGameData[i].Publisher);
+        WriteStr(FGameData[i].Genre);
+        WriteStr(FGameData[i].Series);
+        WriteStr(FGameData[i].Notes);
+        WriteStr(FGameData[i].Manual);
+        WriteStr(FGameData[i].ConfigurationPath);
+        WriteStr(FGameData[i].RootFolder);
+        WriteStr(FGameData[i].ID);
+        WriteStr(FGameData[i].CommandLine);
+        WriteStr(FGameData[i].PlayMode);
+        WriteStr(FGameData[i].Source);
+      end;
+    finally
+      S.Free;
+    end;
+  except
+    if FileExists(CacheFile) then
+      TFile.Delete(CacheFile);
+  end;
+end;
+
+// Загружаем FGameData из бинарного файла. Возвращает False если кэш повреждён
+function TSGLMainForm.LoadGameCache(const CacheFile: string): Boolean;
+var
+  S: TFileStream;
+  Count, i: Integer;
+  Ver: Word;
+  SkipCount: Integer;
+  function ReadStr: string;
+  var B: TBytes; Len: Word;
+  begin
+    S.ReadBuffer(Len, SizeOf(Len));
+    SetLength(B, Len);
+    if Len > 0 then S.ReadBuffer(B[0], Len);
+    Result := TEncoding.UTF8.GetString(B);
+  end;
+  procedure SkipStr;
+  var B: TBytes; Len: Word;
+  begin
+    S.ReadBuffer(Len, SizeOf(Len));
+    SetLength(B, Len);
+    if Len > 0 then S.ReadBuffer(B[0], Len);
+  end;
+begin
+  Result := False;
+  try
+    S := TFileStream.Create(CacheFile, fmOpenRead or fmShareDenyWrite);
+    try
+      S.ReadBuffer(Ver, SizeOf(Ver));
+      if Ver <> CACHE_VERSION then Exit;
+
+      // Пропускаем блок XML-имён
+      S.ReadBuffer(SkipCount, SizeOf(SkipCount));
+      for i := 0 to SkipCount - 1 do SkipStr;
+
+      S.ReadBuffer(Count, SizeOf(Count));
+      if Count <= 0 then Exit;
+
+      FActualGameCount := 0;
+      SetLength(FGameData, Count);
+
+      for i := 0 to Count - 1 do
+      begin
+        FGameData[i].GameName          := ReadStr;
+        FGameData[i].ApplicationPath   := ReadStr;
+        FGameData[i].Platforms         := ReadStr;
+        S.ReadBuffer(FGameData[i].ReleaseYear, SizeOf(SmallInt));
+        FGameData[i].Developer         := ReadStr;
+        FGameData[i].Publisher         := ReadStr;
+        FGameData[i].Genre             := ReadStr;
+        FGameData[i].Series            := ReadStr;
+        FGameData[i].Notes             := ReadStr;
+        FGameData[i].Manual            := ReadStr;
+        FGameData[i].ConfigurationPath := ReadStr;
+        FGameData[i].RootFolder        := ReadStr;
+        FGameData[i].ID                := ReadStr;
+        FGameData[i].CommandLine       := ReadStr;
+        FGameData[i].PlayMode          := ReadStr;
+        FGameData[i].Source            := ReadStr;
+      end;
+      FActualGameCount := Count;
+      Result := True;
+    finally
+      S.Free;
+    end;
+  except
+    Result := False;
+    if FileExists(CacheFile) then
+      TFile.Delete(CacheFile);
+  end;
+end;
 //-----------------------------------------------------------------------------
 
 procedure TSGLMainForm.StyleMenuClick(Sender: TObject);
@@ -2840,7 +3111,7 @@ if Write = true then
   IgnoreDir := FConfig.ReadString('SGAllSettings', 'IgnoreDir', '');
   HideInTray:= FConfig.ReadBool('SGAllSettings', 'HideInTray', False);
   Hideonstartup1.Checked := FConfig.ReadBool('SGAllSettings', 'HideInTray', False);
-  if FConfig.ReadBool('SGAllSettings', 'HideInTray', False) then
+  if isIconic(Handle) then
   Show1.Caption := 'Show' else Show1.Caption := 'Hide';
   Panel3.Width := FConfig.ReadInteger('SGAllSettings', 'ListViewWidth', SGLMainForm.Width div 3);
   ScrollBox1.Height := FConfig.ReadInteger('SGAllSettings', 'InfoPanelHeight', ScrollBox1.Height);
@@ -2882,6 +3153,12 @@ if Write = true then
   ComboBox1.ItemIndex := FConfig.ReadInteger('SGAllSettings', 'LastFilterCategory', 0);
   FillGenreSeriesCombo('All');
   //---------------------------------------------------------------------------
+  if FConfig.ReadBool('SGAllSettings', 'MultiLineTab', False) then
+   begin
+    Multilinetabs1.Checked := True;
+    TabControl1.MultiLine := True;
+   end;
+  UseBinaryCache1.Checked := FConfig.ReadBool('SGAllSettings', 'UseBinaryCache', False);
  end;
 end;
 
@@ -3081,6 +3358,16 @@ procedure TSGLMainForm.FormKeyDown(Sender: TObject; var Key: Word;
 begin
  if Key = ORD(VK_F1) then About1Click(Sender);
 
+ if Key = VK_F5 then
+  begin
+   if FConfig.ReadBool('SGAllSettings', 'UseBinaryCache', False) then
+    begin
+     FinalizeLoading(True);
+     Key := 0;
+     Exit;
+    end;
+  end;
+
   //Ctrl+Tab to change tabs
   if (ssCtrl in Shift) and (Ord(Key) = VK_TAB) then
    begin
@@ -3109,7 +3396,7 @@ begin
   ComboBox2.Left := ComboBox1.Width + 6;
   ComboBox2.Width := ComboBox1.Width;
   ResizeLabelToText(Label1);
-
+  UpdateToolBarWrap(ToolBar1);
   //Миниатюры
   if EnabledMiniatures and ScrollBox2.Visible then
   begin
@@ -3411,7 +3698,12 @@ with Sender as TMenuItem do
     FConfig.WriteBool('SGAllSettings', 'EmptyWorkingSet', Checked);
     FConfig.UpdateFile;
    end;
-ShowMessage('Changes will take effect after restarting ' + ExtractFileName(ChangeFileExt(ParamStr(0),'')));
+if MessageDlg('The application needs to restart to apply the changes. Restart now?',
+                mtConfirmation, [mbYes, mbNo], 0) = mrYes then
+ begin
+  RegIni(True);
+  RestartApplication(FClosing);
+ end;
 end;
 
 procedure TSGLMainForm.Enabledimagegallery1Click(Sender: TObject);
@@ -3422,7 +3714,49 @@ with Sender as TMenuItem do
     FConfig.WriteBool('SGAllSettings', 'Enabled miniatures', Checked);
     FConfig.UpdateFile;
    end;
-ShowMessage('Changes will take effect after restarting ' + ExtractFileName(ChangeFileExt(ParamStr(0),'')));
+if MessageDlg('The application needs to restart to apply the changes. Restart now?',
+                mtConfirmation, [mbYes, mbNo], 0) = mrYes then
+ begin
+  RegIni(True);
+  RestartApplication(FClosing);
+ end;
+end;
+
+procedure TSGLMainForm.Multilinetabs1Click(Sender: TObject);
+begin
+with Sender as TMenuItem do
+   begin
+    Checked := not Checked;
+    TabControl1.MultiLine := Checked;
+    if Checked then TabControl1.TabWidth := 0;
+    Resize;
+    FConfig.WriteBool('SGAllSettings', 'MultiLineTab', Checked);
+    FConfig.UpdateFile;
+   end;
+end;
+
+procedure TSGLMainForm.UseBinaryCache1Click(Sender: TObject);
+begin
+if not FLoadingComplete then Exit;
+
+with Sender as TMenuItem do
+   begin
+    Checked := not Checked;
+    FConfig.WriteBool('SGAllSettings', 'UseBinaryCache', Checked);
+    FConfig.UpdateFile;
+
+    if Checked = True then
+      FinalizeLoading(True) // включили кэш → пересканировать + перезапустить
+    else
+    begin
+     if MessageDlg('The application needs to restart to apply the changes. Restart now?',
+                mtConfirmation, [mbYes, mbNo], 0) = mrYes then
+      begin
+       RegIni(True);
+       RestartApplication(FClosing);
+      end;
+    end;
+   end;
 end;
 
 procedure TSGLMainForm.Specifyfolders1Click(Sender: TObject);
@@ -3658,6 +3992,8 @@ begin
   if MenuItem.Name = 'miDelete' then
   begin
     if Assigned(Button) then
+     if MessageDlg('Are you sure you want to delete?',
+                mtConfirmation, [mbYes, mbNo], 0) = mrYes then
       DeleteToolButton(ToolBar1, Button.Hint, FConfig, ImageList1, ToolBar1Click);
   end
 
@@ -3804,4 +4140,174 @@ begin
   FlowPanel1.Invalidate;
 end;
 
+//------------------------------------------------------------------------------
+// Переключение фильтр по информационным лейблам
+procedure TSGLMainForm.ApplyLabelFilter(const Category: string; const Value: string);
+var
+  i: Integer;
+  Found: Boolean;
+begin
+  if not FLoadingComplete then Exit;
+
+  // 1. Устанавливаем категорию
+  Found := False;
+  for i := 0 to ComboBox1.Items.Count - 1 do
+    if SameText(ComboBox1.Items[i], Category) then
+    begin
+      if ComboBox1.ItemIndex <> i then
+        ComboBox1.ItemIndex := i;
+      Found := True;
+      Break;
+    end;
+
+  if not Found then Exit;
+
+  // 2. Обновляем список значений в ComboBox2
+  FillFilterValues();
+
+  // 3. Ищем и устанавливаем нужное значение
+  Found := False;
+  for i := 0 to ComboBox2.Items.Count - 1 do
+    if SameText(ComboBox2.Items[i], Value) then
+    begin
+      ComboBox2.ItemIndex := i;
+      Found := True;
+      Break;
+    end;
+
+  if not Found then
+  begin
+    // Если точное совпадение не найдено — ставим текст вручную
+    ComboBox2.Text := Value;
+    ComboBox2.ItemIndex := -1; // чтобы не было старого индекса
+  end;
+
+  // 4. Принудительно применяем фильтр
+  ApplyFilters();
+
+  // 5. Выделяем первую игру
+  if ListView1.Items.Count > 0 then
+  begin
+    ListView1.ItemIndex := 0;
+    ListView1.Selected := ListView1.Items[0];
+    ListView1.Selected.MakeVisible(False);
+  end;
+
+  ActiveControl := ListView1;
+end;
+
+procedure TSGLMainForm.LabelFilterMenuItemClick(Sender: TObject);
+var
+  Value: string;
+  Category: string;
+  Popup: TPopupMenu;
+  OriginalLabel: TLabel;
+begin
+  if not (Sender is TMenuItem) then Exit;
+
+  Value := TMenuItem(Sender).Hint;   // ← Берём из Hint, а не Tag
+  if Value = '' then Exit;
+
+  Popup := TPopupMenu(TMenuItem(Sender).GetParentMenu);
+  if not Assigned(Popup) then Exit;
+
+  OriginalLabel := TLabel(Popup.Tag);
+  if not Assigned(OriginalLabel) then Exit;
+
+  if OriginalLabel = DeveloperLabel then Category := 'Developer'
+  else if OriginalLabel = PublisherLabel then Category := 'Publisher'
+  else if OriginalLabel = GenreLabel then Category := 'Genre'
+  else if OriginalLabel = SeriesLabel then Category := 'Series'
+  else if OriginalLabel = PlayModeLabel then Category := 'Play Mode'
+  else if OriginalLabel = ReleaseLabel then Category := 'Year'
+  else Exit;
+
+  ApplyLabelFilter(Category, Value);
+end;
+
+procedure TSGLMainForm.DeveloperLabelClick(Sender: TObject);
+var
+  LabelText, Category: string;
+  Values: TStringDynArray;
+  Popup: TPopupMenu;
+  MenuItem: TMenuItem;
+  i: Integer;
+begin
+  if not FLoadingComplete then Exit;
+  if not (Sender is TLabel) then Exit;
+
+  LabelText := TLabel(Sender).Caption;
+  if Pos(': ', LabelText) > 0 then
+    LabelText := Copy(LabelText, Pos(': ', LabelText) + 2, MaxInt);
+
+  LabelText := Trim(LabelText);
+  if LabelText = '' then Exit;
+
+  // Определяем категорию
+  if Sender = DeveloperLabel then Category := 'Developer'
+  else if Sender = PublisherLabel then Category := 'Publisher'
+  else if Sender = GenreLabel then Category := 'Genre'
+  else if Sender = SeriesLabel then Category := 'Series'
+  else if Sender = PlayModeLabel then Category := 'Play Mode'
+  else if Sender = PlatformLabel then
+  begin
+    for i := 0 to TabControl1.Tabs.Count - 1 do
+      if SameText(TabControl1.Tabs[i], LabelText) then
+      begin
+        TabControl1.TabIndex := i;
+        TabControl1.OnChange(TabControl1);
+        Exit;
+      end;
+    Exit;
+  end
+  else if Sender = ReleaseLabel then Category := 'Year'
+  else Exit;
+
+  if Category = 'Genre' then
+    Values := LabelText.Split([';'{,'/'}])
+  else
+    Values := LabelText.Split([';']);
+
+  // Если одно значение — сразу фильтруем
+  if Length(Values) = 1 then
+  begin
+    ApplyLabelFilter(Category, Trim(Values[0]));
+    Exit;
+  end;
+
+  // Создаём меню
+  Popup := TPopupMenu.Create(nil);
+  try
+    Popup.Tag := NativeInt(Sender); // сохраняем оригинальный Label
+
+    for i := Low(Values) to High(Values) do
+    begin
+      if Trim(Values[i]) = '' then Continue;
+
+      MenuItem := TMenuItem.Create(Popup);
+      MenuItem.Caption := StringReplace(Trim(Values[i]), '&', '&&', [rfReplaceAll]);
+      MenuItem.Hint := Trim(Values[i]);           // ← Вот здесь главное изменение!
+      MenuItem.OnClick := LabelFilterMenuItemClick;
+      Popup.Items.Add(MenuItem);
+    end;
+
+    if Popup.Items.Count > 0 then
+      Popup.Popup(Mouse.CursorPos.X, Mouse.CursorPos.Y);
+  finally
+    // Popup освободится сам
+  end;
+end;
+
+procedure TSGLMainForm.DeveloperLabelMouseEnter(Sender: TObject);
+begin
+if Sender is TLabel then
+    TLabel(Sender).Font.Style := TLabel(Sender).Font.Style + [fsUnderline];
+end;
+
+procedure TSGLMainForm.DeveloperLabelMouseLeave(Sender: TObject);
+begin
+if Sender is TLabel then
+    TLabel(Sender).Font.Style := TLabel(Sender).Font.Style - [fsUnderline];
+end;
+//-----------------------------------------------------------------------------
 end.

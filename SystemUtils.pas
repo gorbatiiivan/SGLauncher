@@ -2,13 +2,14 @@
 
 interface
 
-uses Windows, Classes, SysUtils, ActiveX, ShlObj, Vcl.Dialogs, ShellApi, ExtCtrls,
-     IniFiles, Forms, ComObj, StdCtrls, IOUtils, Graphics, Menus, CommCtrl,
+uses Windows, Classes, SysUtils, Messages, ActiveX, ShlObj, Vcl.Dialogs, ShellApi,
+     ExtCtrls, IniFiles, Forms, ComObj, StdCtrls, IOUtils, Graphics, Menus, CommCtrl,
      Vcl.Themes;
 
 // GENERAL FUNCTIONS
 // ---------------------------------------------------------------------------
 function GetExecPath: String;
+procedure RestartApplication(FClosing: Boolean);
 function ShellOpen(const FileName: string; const Parameters: string = ''): Boolean;
 procedure StrToList(const S, Sign: string; SList: TStrings);
 function LoadIconFromRCDATA(const ResourceName: string): TIcon;
@@ -41,6 +42,37 @@ begin
   Result := IncludeTrailingPathDelimiter(ExtractFileDir(ExtractFileDir(ParamStr(0))));
 end;
 
+procedure RestartApplication(FClosing: Boolean);
+var
+  ExeName: string;
+begin
+  ExeName := ParamStr(0);
+
+  // Закрываем все меню
+  SendMessage(HWND_BROADCAST, WM_CANCELMODE, 0, 0);
+
+  // Создаём отдельный поток для перезапуска
+  TThread.CreateAnonymousThread(
+    procedure
+    begin
+      // Ждём пока закроются меню
+      Sleep(200);
+
+      // Запускаем новый процесс
+      ShellExecute(0, 'open', PChar(ExeName), nil, nil, SW_SHOW);
+
+      // Завершаем основной процесс
+      TThread.Queue(nil,
+        procedure
+        begin
+          FClosing := True;
+          Application.Terminate;
+        end);
+    end
+  ).Start;
+
+  // Не вызываем Application.Terminate здесь, поток сделает это позже
+end;
 function ShellOpen(const FileName: string; const Parameters: string = ''): Boolean;
 const
   ERR_MSG: array[0..31] of string = (

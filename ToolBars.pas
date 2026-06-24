@@ -27,6 +27,7 @@ procedure DeleteToolButton(ToolBar: TToolBar; Hint: string;
 procedure AddItemToButtonPopup(ToolBar: TToolBar; Config: TMemIniFile; Form: TForm;
   OnButtonClick: TNotifyEvent);
 procedure UpdateToolbarMenuChecks(MenuItem: TMenuItem; ToolBar: TToolBar);
+procedure UpdateToolBarWrap(ToolBar: TToolBar);
 // ---------------------------------------------------------------------------
 
 implementation
@@ -402,6 +403,67 @@ begin
   begin
     Root.Items[I].Checked :=
       SameText(Root.Items[I].Hint, AlignName);
+  end;
+end;
+
+procedure UpdateToolBarWrap(ToolBar: TToolBar);
+var
+  i: Integer;
+  Btn: TToolButton;
+  CurrentWidth: Integer;
+  LastVisibleIdx: Integer;
+begin
+  if not ToolBar.Wrapable then Exit;
+
+  ToolBar.DisableAlign;
+  try
+    // ШАГ 1: Сбросить Wrap у ВСЕХ кнопок через Windows API
+    // (свойство Delphi .Wrap иногда не сбрасывает реальный флаг TBSTATE_WRAP)
+    for i := 0 to ToolBar.ButtonCount - 1 do
+    begin
+      ToolBar.Buttons[i].Wrap := False;
+      // Принудительно сбрасываем флаг на уровне WinAPI
+      SendMessage(ToolBar.Handle, TB_SETSTATE, ToolBar.Buttons[i].Index,
+        SendMessage(ToolBar.Handle, TB_GETSTATE, ToolBar.Buttons[i].Index, 0)
+        and not TBSTATE_WRAP);
+    end;
+
+    // ШАГ 2: Пересчитать переносы
+    CurrentWidth    := 0;
+    LastVisibleIdx  := -1;
+
+    for i := 0 to ToolBar.ButtonCount - 1 do
+    begin
+      Btn := ToolBar.Buttons[i];
+
+      if not Btn.Visible then
+        Continue;
+
+      Inc(CurrentWidth, Btn.Width);
+
+      if Btn.Style = tbsSeparator then
+        Inc(CurrentWidth, 6);
+
+      if (CurrentWidth > ToolBar.ClientWidth) and (LastVisibleIdx >= 0) then
+      begin
+        // Перенос ставим на последнюю видимую кнопку предыдущего ряда
+        ToolBar.Buttons[LastVisibleIdx].Wrap := True;
+        CurrentWidth := Btn.Width; // новый ряд
+      end;
+
+      LastVisibleIdx := i;
+    end;
+
+    // ШАГ 3: Последняя кнопка — никогда не переносит строку
+    if LastVisibleIdx >= 0 then
+      ToolBar.Buttons[LastVisibleIdx].Wrap := False;
+
+  finally
+    ToolBar.EnableAlign;
+    // Принудительно пересчитать высоту тулбара
+    ToolBar.AutoSize := False;
+    ToolBar.AutoSize := True;
+    ToolBar.Repaint;
   end;
 end;
 

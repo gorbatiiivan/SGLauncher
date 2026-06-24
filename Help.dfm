@@ -177,7 +177,7 @@ object HelpForm: THelpForm
           
             '// -------------------------------------------------------------' +
             '--------Installed games-----------------------------------------' +
-            '------------------'
+            '-----------------'
           
             '   To correctly display installed games, you need to specify the' +
             ' game folders (Tray Menu '#8594' Options '#8594' Specify Folders), '
@@ -203,7 +203,16 @@ object HelpForm: THelpForm
             '----------Installation------------------------------------------' +
             '-------------------'
           ''
-          'Move the SGLauncher folder to your LaunchBox folder.')
+          'Move the SGLauncher folder to your LaunchBox folder.'
+          ''
+          
+            '// -------------------------------------------------------------' +
+            '------Keyboard shortcuts----------------------------------------' +
+            '----------------'
+          ''
+          
+            'F5 - Automatically rebuild the binary cache (requires "Use Binar' +
+            'y Cache" to be enabled in the tray menu).')
         ReadOnly = True
         TabOrder = 0
       end

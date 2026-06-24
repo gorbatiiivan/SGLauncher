@@ -3,7 +3,7 @@ object SGLMainForm: TSGLMainForm
   Top = 0
   Margins.Left = 14
   ClientHeight = 750
-  ClientWidth = 957
+  ClientWidth = 934
   Color = clBtnFace
   Font.Charset = DEFAULT_CHARSET
   Font.Color = clWindowText
@@ -21,10 +21,12 @@ object SGLMainForm: TSGLMainForm
     AlignWithMargins = True
     Left = 3
     Top = 46
-    Width = 951
+    Width = 928
     Height = 701
     Margins.Top = 6
     Align = alClient
+    RaggedRight = True
+    TabHeight = 25
     TabOrder = 0
     OnChange = TabControl1Change
     object Splitter1: TSplitter
@@ -37,7 +39,7 @@ object SGLMainForm: TSGLMainForm
     object Panel1: TPanel
       Left = 320
       Top = 6
-      Width = 627
+      Width = 604
       Height = 691
       Align = alClient
       BevelOuter = bvNone
@@ -45,7 +47,7 @@ object SGLMainForm: TSGLMainForm
       object Splitter2: TSplitter
         Left = 0
         Top = 421
-        Width = 627
+        Width = 604
         Height = 7
         Cursor = crVSplit
         Align = alTop
@@ -55,7 +57,7 @@ object SGLMainForm: TSGLMainForm
       object Panel2: TPanel
         Left = 0
         Top = 428
-        Width = 627
+        Width = 604
         Height = 263
         Align = alClient
         BevelOuter = bvNone
@@ -64,7 +66,7 @@ object SGLMainForm: TSGLMainForm
           AlignWithMargins = True
           Left = 97
           Top = 3
-          Width = 433
+          Width = 410
           Height = 134
           Margins.Left = 55
           Margins.Right = 55
@@ -79,7 +81,7 @@ object SGLMainForm: TSGLMainForm
           ExplicitHeight = 226
         end
         object NextImgBtn: TSpeedButton
-          Left = 585
+          Left = 562
           Top = 0
           Width = 42
           Height = 140
@@ -118,7 +120,7 @@ object SGLMainForm: TSGLMainForm
         object Splitter3: TSplitter
           Left = 0
           Top = 140
-          Width = 627
+          Width = 604
           Height = 7
           Cursor = crVSplit
           Align = alBottom
@@ -130,7 +132,7 @@ object SGLMainForm: TSGLMainForm
           AlignWithMargins = True
           Left = 55
           Top = 150
-          Width = 517
+          Width = 494
           Height = 110
           Margins.Left = 55
           Margins.Right = 55
@@ -156,7 +158,7 @@ object SGLMainForm: TSGLMainForm
         AlignWithMargins = True
         Left = 6
         Top = 6
-        Width = 615
+        Width = 592
         Height = 409
         Margins.Left = 6
         Margins.Top = 6
@@ -174,7 +176,7 @@ object SGLMainForm: TSGLMainForm
           AlignWithMargins = True
           Left = 14
           Top = 206
-          Width = 595
+          Width = 572
           Height = 42
           Margins.Left = 14
           Margins.Top = 6
@@ -196,7 +198,7 @@ object SGLMainForm: TSGLMainForm
         object InfoPanel: TPanel
           Left = 0
           Top = 0
-          Width = 615
+          Width = 592
           Height = 200
           Align = alTop
           BevelOuter = bvNone
@@ -205,7 +207,7 @@ object SGLMainForm: TSGLMainForm
             AlignWithMargins = True
             Left = 14
             Top = 3
-            Width = 598
+            Width = 575
             Height = 32
             Margins.Left = 14
             Align = alTop
@@ -222,76 +224,104 @@ object SGLMainForm: TSGLMainForm
             AlignWithMargins = True
             Left = 14
             Top = 41
-            Width = 598
+            Width = 575
             Height = 15
+            Cursor = crHandPoint
             Margins.Left = 14
             Align = alTop
             ShowAccelChar = False
+            OnClick = DeveloperLabelClick
+            OnMouseEnter = DeveloperLabelMouseEnter
+            OnMouseLeave = DeveloperLabelMouseLeave
             ExplicitWidth = 3
           end
           object PublisherLabel: TLabel
             AlignWithMargins = True
             Left = 14
             Top = 62
-            Width = 598
+            Width = 575
             Height = 15
+            Cursor = crHandPoint
             Margins.Left = 14
             Align = alTop
             ShowAccelChar = False
+            OnClick = DeveloperLabelClick
+            OnMouseEnter = DeveloperLabelMouseEnter
+            OnMouseLeave = DeveloperLabelMouseLeave
             ExplicitWidth = 3
           end
           object GenreLabel: TLabel
             AlignWithMargins = True
             Left = 14
             Top = 83
-            Width = 598
+            Width = 575
             Height = 15
+            Cursor = crHandPoint
             Margins.Left = 14
             Align = alTop
             ShowAccelChar = False
+            OnClick = DeveloperLabelClick
+            OnMouseEnter = DeveloperLabelMouseEnter
+            OnMouseLeave = DeveloperLabelMouseLeave
             ExplicitWidth = 3
           end
           object SeriesLabel: TLabel
             AlignWithMargins = True
             Left = 14
             Top = 104
-            Width = 598
+            Width = 575
             Height = 15
+            Cursor = crHandPoint
             Margins.Left = 14
             Align = alTop
             ShowAccelChar = False
+            OnClick = DeveloperLabelClick
+            OnMouseEnter = DeveloperLabelMouseEnter
+            OnMouseLeave = DeveloperLabelMouseLeave
             ExplicitWidth = 3
           end
           object PlatformLabel: TLabel
             AlignWithMargins = True
             Left = 14
             Top = 125
-            Width = 598
+            Width = 575
             Height = 15
+            Cursor = crHandPoint
             Margins.Left = 14
             Align = alTop
             ShowAccelChar = False
+            OnClick = DeveloperLabelClick
+            OnMouseEnter = DeveloperLabelMouseEnter
+            OnMouseLeave = DeveloperLabelMouseLeave
             ExplicitWidth = 3
           end
           object ReleaseLabel: TLabel
             AlignWithMargins = True
             Left = 14
             Top = 146
-            Width = 598
+            Width = 575
             Height = 15
+            Cursor = crHandPoint
             Margins.Left = 14
             Align = alTop
             ShowAccelChar = False
+            OnClick = DeveloperLabelClick
+            OnMouseEnter = DeveloperLabelMouseEnter
+            OnMouseLeave = DeveloperLabelMouseLeave
             ExplicitWidth = 3
           end
           object PlayModeLabel: TLabel
             AlignWithMargins = True
             Left = 14
             Top = 167
-            Width = 598
+            Width = 575
             Height = 15
+            Cursor = crHandPoint
             Margins.Left = 14
             Align = alTop
+            OnClick = DeveloperLabelClick
+            OnMouseEnter = DeveloperLabelMouseEnter
+            OnMouseLeave = DeveloperLabelMouseLeave
             ExplicitWidth = 3
           end
         end
@@ -414,7 +444,7 @@ object SGLMainForm: TSGLMainForm
   object ToolBar1: TToolBar
     Left = 0
     Top = 0
-    Width = 957
+    Width = 934
     Height = 40
     AutoSize = True
     ButtonHeight = 38
@@ -493,12 +523,20 @@ object SGLMainForm: TSGLMainForm
         Caption = 'Autostart'
         OnClick = Autostart1Click
       end
-      object StyleMenu1: TMenuItem
-        Caption = 'Style'
-      end
       object Hideonstartup1: TMenuItem
         Caption = 'Hide on startup'
         OnClick = Hideonstartup1Click
+      end
+      object Enabledimagegallery1: TMenuItem
+        Caption = 'Enabled image gallery'
+        OnClick = Enabledimagegallery1Click
+      end
+      object Multilinetabs1: TMenuItem
+        Caption = 'Multi line tabs'
+        OnClick = Multilinetabs1Click
+      end
+      object StyleMenu1: TMenuItem
+        Caption = 'Style'
       end
       object ToolBarMenu1: TMenuItem
         Caption = 'ToolBar'
@@ -530,13 +568,16 @@ object SGLMainForm: TSGLMainForm
           end
         end
       end
-      object EmptyWorkingSet1: TMenuItem
-        Caption = 'EmptyWorkingSet'
-        OnClick = EmptyWorkingSet1Click
-      end
-      object Enabledimagegallery1: TMenuItem
-        Caption = 'Enabled image gallery'
-        OnClick = Enabledimagegallery1Click
+      object Core1: TMenuItem
+        Caption = 'Core'
+        object UseBinaryCache1: TMenuItem
+          Caption = 'Use Binary Cache'
+          OnClick = UseBinaryCache1Click
+        end
+        object EmptyWorkingSet1: TMenuItem
+          Caption = 'EmptyWorkingSet'
+          OnClick = EmptyWorkingSet1Click
+        end
       end
       object N5: TMenuItem
         Caption = '-'
