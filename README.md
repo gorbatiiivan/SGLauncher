@@ -40,7 +40,9 @@ etc...
 
 No installation required, just move the SGLauncher folder to your LaunchBox folder.
 
-Example: D:\LaunchBox\SGLauncher\SGLauncher.exe
+Example: 
+
+         D:\LaunchBox\SGLauncher\SGLauncher.exe
 
          D:\LaunchBox\eXo\...
 
