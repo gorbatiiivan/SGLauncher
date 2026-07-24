@@ -15,6 +15,7 @@ uses
   DialogForm in 'DialogForm.pas' {DiagForm},
   Help in 'Help.pas' {HelpForm},
   ToolBtnProperties in 'ToolBtnProperties.pas' {ToolBtnPropertiesForm},
+  GamesCore in 'GamesCore.pas',
   SystemUtils in 'SystemUtils.pas',
   ToolBars in 'ToolBars.pas';
 

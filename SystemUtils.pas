@@ -11,6 +11,10 @@ uses Windows, Classes, SysUtils, Messages, ActiveX, ShlObj, Vcl.Dialogs, ShellAp
 function GetExecPath: String;
 procedure RestartApplication(FClosing: Boolean);
 function ShellOpen(const FileName: string; const Parameters: string = ''): Boolean;
+procedure OpenFileLocation(FileName: TFileName);
+function RunProcess(const ExePath: string; const Parameters: string = '';
+  const WorkingDir: string = ''; RunAsAdmin: Boolean = False;
+  WaitForExit: Boolean = False; ShowError: Boolean = True): Boolean;
 procedure StrToList(const S, Sign: string; SList: TStrings);
 function LoadIconFromRCDATA(const ResourceName: string): TIcon;
 procedure ResizeLabelToText(ALabel: TLabel);
@@ -108,6 +112,94 @@ begin
   finally
     // Restore original directory
     SetCurrentDir(CurrentDir);
+  end;
+end;
+
+procedure OpenFileLocation(FileName: TFileName);
+begin
+  ShellExecute(Application.Handle, 'OPEN', PChar('explorer.exe'),
+           PChar('/select, "' + FileName + '"'), nil, SW_NORMAL);
+end;
+
+function RunProcess(const ExePath: string; const Parameters: string = '';
+  const WorkingDir: string = ''; RunAsAdmin: Boolean = False;
+  WaitForExit: Boolean = False; ShowError: Boolean = True): Boolean;
+var
+  SEI: TShellExecuteInfo;
+  WorkDir: string;
+  FileToRun, ParamsToUse: string;
+  IsDir: Boolean;
+  ErrorMsg: string;
+begin
+  Result := False;
+
+  // Check if path exists
+  if not FileExists(ExePath) and not DirectoryExists(ExePath) then
+  begin
+    if ShowError then
+      MessageBox(0, PChar(Format('The file or directory does not exist: %s', [ExePath])),
+                 'Error', MB_OK or MB_ICONERROR);
+    Exit;
+  end;
+
+  IsDir := DirectoryExists(ExePath);
+
+  // Prepare file and parameters
+  if IsDir then
+  begin
+    FileToRun := 'explorer.exe';
+    ParamsToUse := '"' + ExePath + '"';
+  end
+  else
+  begin
+    FileToRun := ExePath;
+    ParamsToUse := Parameters;
+  end;
+
+  // Set working directory
+  WorkDir := WorkingDir;
+  if WorkDir = '' then
+    WorkDir := ExtractFilePath(ExePath);
+
+  // Prepare ShellExecuteInfo
+  ZeroMemory(@SEI, SizeOf(SEI));
+  SEI.cbSize := SizeOf(SEI);
+  SEI.fMask := SEE_MASK_NOCLOSEPROCESS or SEE_MASK_FLAG_DDEWAIT or SEE_MASK_FLAG_NO_UI;
+  SEI.Wnd := 0;
+
+  // Set verb: 'runas' for admin or 'open' for normal user
+  if RunAsAdmin then
+    SEI.lpVerb := 'runas'
+  else
+    SEI.lpVerb := 'open';
+
+  SEI.lpFile := PChar(FileToRun);
+  SEI.lpParameters := PChar(ParamsToUse);
+  SEI.lpDirectory := PChar(WorkDir);
+  SEI.nShow := SW_SHOWNORMAL;
+
+  Result := ShellExecuteEx(@SEI);
+
+  // Handle process handle
+  if Result and (SEI.hProcess <> 0) then
+  begin
+    if WaitForExit then
+      WaitForSingleObject(SEI.hProcess, INFINITE);
+    CloseHandle(SEI.hProcess);
+  end;
+
+  // Error handling
+  if not Result and ShowError then
+  begin
+    case GetLastError of
+      ERROR_CANCELLED:
+        ErrorMsg := 'The user has revoked the elevation of rights. (UAC)';
+      ERROR_FILE_NOT_FOUND:
+        ErrorMsg := 'File not found';
+      else
+        ErrorMsg := Format('ShellExecuteEx failed. Error: %d', [GetLastError]);
+    end;
+    MessageBox(0, PChar(ErrorMsg), 'Error', MB_OK or MB_ICONERROR);
   end;
 end;
 

@@ -32,7 +32,6 @@ procedure UpdateToolBarWrap(ToolBar: TToolBar);
 
 implementation
 
-uses Unit1, ToolBtnProperties, SystemUtils;
                              // GENERAL FUNCTIONS
 // ---------------------------------------------------------------------------
 
@@ -213,6 +212,7 @@ var
   i: Integer;
   TempList: TStringList;
   SharedPopup: TPopupMenu;
+  TempArray: TArray<string>;
 begin
   // ← СОХРАНЯЕМ ссылку на существующий PopupMenu
   SharedPopup := ToolBar.PopupMenu;
@@ -244,7 +244,10 @@ begin
         NewButton.PopupMenu := SharedPopup;
 
        TempList.Clear;
-       StrToList(ButtonList.ValueFromIndex[i], '|', TempList);
+       TempArray := ButtonList.ValueFromIndex[i].Split(['|'], TStringSplitOptions.None);
+
+       for var s in TempArray do
+          TempList.Add(Trim(s));
 
        // проверка индексов
        if TempList.Count >= 1 then // Есть хотя бы путь к файлу
@@ -347,6 +350,34 @@ begin
     Popup := TPopupMenu.Create(Form);
     Popup.Name := 'pmToolBarButtons'; // желательно дать имя для отладки
   end;
+
+  // ────────────── Пункт «Run as administrator» (ПЕРВЫЙ) ──────────────
+  NewMenuItem := TMenuItem.Create(Popup);
+  NewMenuItem.Caption := 'Run as administrator';
+  NewMenuItem.Name     := 'miRunAsAdmin';
+  NewMenuItem.ImageIndex := -1;      // можно позже назначить иконку
+  NewMenuItem.OnClick  := OnButtonClick;
+  NewMenuItem.Tag      := 777;       // Специальный тег для идентификации
+  Popup.Items.Add(NewMenuItem);
+
+  // ────────────── Разделитель ──────────────
+  NewMenuItem := TMenuItem.Create(Popup);
+  NewMenuItem.Caption := '-';
+  Popup.Items.Add(NewMenuItem);
+
+  // ────────────── Пункт «Open File Location» ──────────────
+  NewMenuItem := TMenuItem.Create(Popup);
+  NewMenuItem.Caption := 'Open File Location';
+  NewMenuItem.Name     := 'miOpenFileLocation';
+  NewMenuItem.ImageIndex := -1;      // можно позже назначить иконку
+  NewMenuItem.OnClick  := OnButtonClick;
+  NewMenuItem.Tag      := 778;       // Специальный тег для идентификации
+  Popup.Items.Add(NewMenuItem);
+
+  // ────────────── Разделитель ──────────────
+  NewMenuItem := TMenuItem.Create(Popup);
+  NewMenuItem.Caption := '-';
+  Popup.Items.Add(NewMenuItem);
 
   // ────────────── Пункт «Добавить» ──────────────
   NewMenuItem := TMenuItem.Create(Popup);

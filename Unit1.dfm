@@ -422,6 +422,19 @@ object SGLMainForm: TSGLMainForm
           TabOrder = 1
           OnChange = ComboBox2Change
         end
+        object PlatformBtn: TButton
+          Left = 264
+          Top = 2
+          Width = 39
+          Height = 28
+          Hint = 'Filter by Platform'
+          Caption = #9776
+          DropDownMenu = pmPlatformFilter
+          Enabled = False
+          Style = bsSplitButton
+          TabOrder = 2
+          OnClick = PlatformBtnClick
+        end
       end
       object Edit1: TEdit
         Left = 0
@@ -470,6 +483,13 @@ object SGLMainForm: TSGLMainForm
       OnClick = Configuration1Click
     end
     object N1: TMenuItem
+      Caption = '-'
+    end
+    object Favorites1: TMenuItem
+      Caption = 'Add to Favorites'
+      OnClick = Favorites1Click
+    end
+    object N8: TMenuItem
       Caption = '-'
     end
     object Manual1: TMenuItem
@@ -605,6 +625,11 @@ object SGLMainForm: TSGLMainForm
     Height = 32
     Width = 32
     Left = 544
+    Top = 24
+  end
+  object pmPlatformFilter: TPopupMenu
+    OnPopup = pmPlatformFilterPopup
+    Left = 592
     Top = 24
   end
 end
