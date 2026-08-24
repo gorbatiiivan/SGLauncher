@@ -482,6 +482,17 @@ object SGLMainForm: TSGLMainForm
       Caption = 'Configuration'
       OnClick = Configuration1Click
     end
+    object N9: TMenuItem
+      Caption = '-'
+    end
+    object Download1: TMenuItem
+      Caption = 'Download archive'
+      OnClick = Download1Click
+    end
+    object DeleteZIP1: TMenuItem
+      Caption = 'Delete archive'
+      OnClick = DeleteZIP1Click
+    end
     object N1: TMenuItem
       Caption = '-'
     end
@@ -510,6 +521,9 @@ object SGLMainForm: TSGLMainForm
     object Customimagename1: TMenuItem
       Caption = 'Custom image name'
       OnClick = Customimagename1Click
+    end
+    object sepDynamicStart: TMenuItem
+      Caption = '-'
     end
   end
   object TrayIcon: TTrayIcon

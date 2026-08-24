@@ -14,7 +14,9 @@ type
     Button2: TButton;
     Button3: TButton;
     Label2: TLabel;
+    platformcombo: TComboBox;
     procedure Button3Click(Sender: TObject);
+    procedure platformcomboChange(Sender: TObject);
   private
     { Private declarations }
   public
@@ -30,7 +32,7 @@ implementation
 
 {$R *.dfm}
 
-uses ToolBars, SystemUtils;
+uses ToolBars, SystemUtils, Unit1;
 
 procedure TDiagForm.Button3Click(Sender: TObject);
 var
@@ -55,6 +57,11 @@ if ifFile = True then
        Edit1.Text := Edit1.Text + ';' + GetLastFolderName(sFile);
     end;
  end;
+end;
+
+procedure TDiagForm.platformcomboChange(Sender: TObject);
+begin
+ Edit1.Text := SGLMainForm.FConfig.ReadString('LanguagesPack',platformcombo.Items[platformcombo.ItemIndex],'');
 end;
 
 end.

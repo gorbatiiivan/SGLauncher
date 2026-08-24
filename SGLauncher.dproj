@@ -183,6 +183,9 @@
         <DCCReference Include="GamesCore.pas"/>
         <DCCReference Include="SystemUtils.pas"/>
         <DCCReference Include="ToolBars.pas"/>
+        <DCCReference Include="Aria2Thread.pas">
+            <Form>$R *.res</Form>
+        </DCCReference>
         <RcItem Include="Icon2.ico">
             <ResourceType>ICON</ResourceType>
             <ResourceId>OnLoadIcon</ResourceId>

@@ -25,10 +25,12 @@ type
     procedure FillFilterValues;
     procedure InitializePlatformTabs;
     procedure FinalizeLoading(ADeleteCache: Boolean = False);
+    procedure UpdateLanguagesPackFromGames;
     procedure UpdateExtrasMenu(const GameIndex: Integer);
     procedure ClearGameInfo;
     procedure UpdateGenreSeriesComboForCurrentPlatform;
     procedure ShowGameByIndex(const ItemIndex: Integer);
+    procedure UpdateMenuItemsForCurrentGame;
     procedure LoadImageWithRetry(const FileName: string;
               Image: TImage; MaxRetries: Integer = 1);
     procedure StartImageLoadThread(ItemIndex, RealIndex: Integer);
@@ -66,9 +68,19 @@ type
     procedure UpdateFavoritesMenuItem;
     procedure LoadFavoritesFromConfig;
     procedure RemoveFilteredIndexFromView(ItemIndex: Integer);
+    // Загрузка торрентов
+    function IsExoFirstFolder(const Path: string): Boolean;
+    function GetExoFolderName(const FullPath: string; const Del: Char): string;
+    function GetExoFolderNamewithYear(const FullPath: string; const Del: Char; const Year: string): string;
+    procedure Aria2Download(Language: String);
+    function GetZipPathForLanguage(const G: TGameData; const Language: string): string;
+    function TorrentFileExists(const G: TGameData; const Language: string): Boolean;
+    function IsGameFolderExists(const G: TGameData; const Language: string): Boolean;
   end;
 
 implementation
+
+uses Aria2Thread;
 
 // XML
 //------------------------------------------------------------------------------
@@ -178,7 +190,7 @@ begin
     OwnLP := TStringList.Create;
     OwnLP.Delimiter := ';';
     OwnLP.StrictDelimiter := True;
-    OwnLP.DelimitedText := SGLMainForm.FConfig.ReadString('SGAllSettings', 'LanguagesPack', '');
+    OwnLP.DelimitedText := SGLMainForm.FConfig.ReadString('LanguagesPack', G.Platforms, '');
     ActiveLP := OwnLP;
   end;
 
@@ -442,17 +454,15 @@ var
   ExtrasMenu: TMenuItem;
   HasItems: Boolean;
   FixedMenuCount: Integer;
+  MarkerIdx: Integer;
 begin
-  // === ОПРЕДЕЛЯЕМ, СКОЛЬКО ПУНКТОВ ДОЛЖНО ОСТАТЬСЯ ===
-  FixedMenuCount := 9; // базовые пункты (Run, Configuration, Manual, разделители и т.д.)
-
-  // Если уже добавлен пункт "Add to Favorites" — увеличиваем
-  if Assigned(Favorites1) and (PopupMenu1.Items.IndexOf(Favorites1) >= 0) then
-    Inc(FixedMenuCount);   // теперь оставляем 9 пунктов
-
-  // Очищаем всё, что добавлялось ранее после первых 6 пунктов
-  while PopupMenu1.Items.Count > FixedMenuCount do
-    PopupMenu1.Items.Delete(PopupMenu1.Items.Count - 1);
+  // Удаляем всё, что после маркера
+  MarkerIdx := PopupMenu1.Items.IndexOf(sepDynamicStart);
+  if MarkerIdx >= 0 then
+  begin
+    while PopupMenu1.Items.Count > MarkerIdx + 1 do
+      PopupMenu1.Items.Delete(PopupMenu1.Items.Count - 1);
+  end;
 
   if GameIndex = -1 then Exit;
   AppPath := FGameData[GameIndex].ApplicationPath;
@@ -466,7 +476,7 @@ begin
   HasItems := TDirectory.Exists(FullExtrasPath);
 
   // Проверяем наличие языковых папок (можно добавить функцию для проверки)
-  LanguagesString := FConfig.ReadString('SGAllSettings', 'LanguagesPack', '');
+  LanguagesString := FConfig.ReadString('LanguagesPack', FGameData[GameIndex].Platforms, '');
 
   // Если нет ни основной папки, ни языковых - выходим
   if not HasItems and (LanguagesString = '') then
@@ -534,7 +544,7 @@ begin
   PrevImgBtn.Enabled := False;
 
   // очистить накопленные иконки
-  while PopupMenu1.Items.Count > 8 do
+  while PopupMenu1.Items.Count > 12 do
     PopupMenu1.Items.Delete(PopupMenu1.Items.Count - 1);
   if PopupMenu1.Images <> nil then
     (PopupMenu1.Images as TImageList).Clear;
@@ -902,6 +912,7 @@ begin
 
             InitializePlatformTabs;
             FLoadingComplete := True;
+            UpdateLanguagesPackFromGames;
 
             SavedTab := FConfig.ReadString('SGAllSettings', 'LastTab', 'All');
             TabIdx := TabControl1.Tabs.IndexOf(SavedTab);
@@ -950,6 +961,44 @@ begin
 
   FLoaderThread.FreeOnTerminate := False;
   FLoaderThread.Start;
+end;
+
+procedure TSGLMainFormHelper.UpdateLanguagesPackFromGames;
+var
+  i: Integer;
+  Platform: string;
+  SL: TStringList;
+begin
+  if not Assigned(FConfig) then Exit;
+
+  SL := TStringList.Create;
+  try
+    SL.Sorted := True;
+    SL.Duplicates := dupIgnore;
+
+    // Собираем уникальные платформы из всех игр
+    for i := 0 to High(FGameData) do
+    begin
+      Platform := Trim(FGameData[i].Platforms);
+      if Platform = '' then Continue;
+      // Исключаем служебные значения, которые не являются реальными платформами
+      if SameText(Platform, 'All') or SameText(Platform, 'Installed') or SameText(Platform, 'Favorites') then
+        Continue;
+      SL.Add(Platform);
+    end;
+
+    // Добавляем недостающие платформы в секцию LanguagesPack с пустым значением
+    for i := 0 to SL.Count - 1 do
+    begin
+      Platform := SL[i];
+      if not FConfig.ValueExists('LanguagesPack', Platform) then
+        FConfig.WriteString('LanguagesPack', Platform, '');
+    end;
+
+    FConfig.UpdateFile;
+  finally
+    SL.Free;
+  end;
 end;
 
 procedure TSGLMainFormHelper.ApplyFilters;
@@ -1144,11 +1193,54 @@ begin
      Configuration1.Enabled := FGameData[RealIndex].IsInstalled;
     end;
 
+  if DirectoryExists(ExtractFilePath(ParamStr(0))+'torrents') and
+   FileExists(ExtractFilePath(ParamStr(0))+'torrents\torrents.txt') and
+   SGLMainForm.FTorrentConfig.SectionExists(FGameData[RealIndex].Platforms) then
+  begin
+   Download1.Visible := IsExoFirstFolder(FGameData[RealIndex].ApplicationPath);
+   DeleteZIP1.Visible := IsExoFirstFolder(FGameData[RealIndex].ApplicationPath);
+   N1.Visible := IsExoFirstFolder(FGameData[RealIndex].ApplicationPath);
+  end else
+  begin
+   Download1.Visible := False;
+   DeleteZIP1.Visible := False;
+   N1.Visible := False;
+  end;
+
   // ===== ЗАПУСКАЕМ ПОТОК ДЛЯ ЗАГРУЗКИ ИЗОБРАЖЕНИЙ =====
   StartImageLoadThread(ItemIndex, RealIndex);
 
   // ===== EXTRAS =====
   UpdateExtrasMenu(RealIndex);
+end;
+
+procedure TSGLMainFormHelper.UpdateMenuItemsForCurrentGame;
+var
+  RealIndex: Integer;
+begin
+  if ListView1.ItemIndex < 0 then Exit;
+  if ListView1.ItemIndex >= Length(FFilteredIndices) then Exit;
+
+  RealIndex := FFilteredIndices[ListView1.ItemIndex];
+  if (RealIndex < 0) or (RealIndex >= Length(FGameData)) then Exit;
+
+  // 1. Обновляем IsInstalled (если нужно – актуальная проверка)
+  FGameData[RealIndex].IsInstalled := IsGameInstalled(FGameData[RealIndex], nil);
+
+  // 2. Run / Install
+  if FGameData[RealIndex].IsInstalled then
+    Run1.Caption := 'Run'
+  else
+    Run1.Caption := 'Install';
+
+  // 3. Configuration
+  if FGameData[RealIndex].ConfigurationPath = '' then
+    Configuration1.Enabled := False
+  else
+    Configuration1.Enabled := FGameData[RealIndex].IsInstalled;
+
+  // 4. Manual
+  Manual1.Enabled := FileExists(LaunchBoxDir + '\' + FGameData[RealIndex].Manual);
 end;
 
 procedure TSGLMainFormHelper.LoadImageWithRetry(const FileName: string;
@@ -1630,15 +1722,10 @@ begin
   end;
 
   // IsInstalled — всегда проверяем по файловой системе (не кэшируем)
-  var SharedLP := TStringList.Create;
-  try
-    SharedLP.Delimiter := ';';
-    SharedLP.StrictDelimiter := True;
-    SharedLP.DelimitedText := FConfig.ReadString('SGAllSettings', 'LanguagesPack', '');
-    for i := 0 to High(FGameData) do
-      FGameData[i].IsInstalled := IsGameInstalled(FGameData[i], SharedLP);
-  finally
-    SharedLP.Free;
+  for i := 0 to FActualGameCount - 1 do
+  begin
+    if FClosing or (csDestroying in ComponentState) then Exit;
+    FGameData[i].IsInstalled := IsGameInstalled(FGameData[i], nil);
   end;
 
   SetLength(FFilteredIndices, Length(FGameData));
@@ -1807,21 +1894,11 @@ begin
   // Проверяем, не отменена ли операция
   if FClosing or (csDestroying in ComponentState) then Exit;
 
-  SharedLP := TStringList.Create;
-  try
-    SharedLP.Delimiter := ';';
-    SharedLP.StrictDelimiter := True;
-    SharedLP.DelimitedText := FConfig.ReadString('SGAllSettings', 'LanguagesPack', '');
-
-    for i := 0 to FActualGameCount - 1 do
-    begin
-      // Проверяем отмену в цикле
-      if FClosing or (csDestroying in ComponentState) then Exit;
-      FGameData[i].IsInstalled := IsGameInstalled(FGameData[i], SharedLP);
-    end;
-  finally
-    SharedLP.Free;
-  end;
+  for i := 0 to FActualGameCount - 1 do
+   begin
+    if FClosing or (csDestroying in ComponentState) then Exit;
+    FGameData[i].IsInstalled := IsGameInstalled(FGameData[i], nil);
+   end;
 end;
 
 procedure TSGLMainFormHelper.DoProcessPendingTabChange(Sender: TObject);
@@ -3207,6 +3284,214 @@ begin
   finally
     SendMessage(ListView1.Handle, WM_SETREDRAW, WPARAM(True), 0);
     ListView1.Invalidate;
+  end;
+end;
+
+// Загрузка торрентов
+//------------------------------------------------------------------------------
+//  Функция чтобы узнать первая папка в строке (для загрузки через aria)
+function TSGLMainFormHelper.IsExoFirstFolder(const Path: string): Boolean;
+var
+  P: Integer;
+begin
+  P := Pos('\', Path);
+  if P > 0 then
+    Result := SameText(Copy(Path, 1, P - 1), 'eXo')
+  else
+    Result := SameText(Path, 'eXo');
+end;
+
+function TSGLMainFormHelper.GetExoFolderName(const FullPath: string; const Del: Char): string;
+var
+  PathParts: TStringList;
+  i: Integer;
+  Found: Boolean;
+begin
+  Result := '';
+  PathParts := TStringList.Create;
+  try
+    PathParts.Delimiter := Del;
+    PathParts.StrictDelimiter := True;
+    PathParts.DelimitedText := FullPath;
+    Found := False;
+    for i := 0 to PathParts.Count - 1 do
+    begin
+      if SameText(PathParts[i], 'eXo') then
+      begin
+        Found := True;
+        Continue; // пропускаем саму папку 'eXo'
+      end;
+      if Found then
+      begin
+        if Result = '' then
+          Result := PathParts[i]
+        else
+          Result := Result + Del + PathParts[i];
+      end;
+    end;
+  finally
+    PathParts.Free;
+  end;
+end;
+
+function TSGLMainFormHelper.GetExoFolderNamewithYear(const FullPath: string; const Del: Char; const Year: string): string;
+var
+  BasePath: string;
+  FirstPart: string;
+  DelPos: Integer;
+begin
+  BasePath := GetExoFolderName(FullPath, Del);
+  if BasePath = '' then
+    Exit('');
+
+  // Извлекаем первую часть (первую папку после 'eXo')
+  DelPos := Pos(Del, BasePath);
+  if DelPos > 0 then
+    FirstPart := Copy(BasePath, 1, DelPos - 1)
+  else
+    FirstPart := BasePath;
+
+  if SameText(FirstPart, 'eXoWin9x') then
+  begin
+    // Для eXoWin9x вставляем год сразу после FirstPart,
+    // остаток пути (если есть) переносим за годом.
+    if DelPos > 0 then
+      Result := FirstPart + Del + Year + Del + Copy(BasePath, DelPos + 1, MaxInt)
+    else
+      Result := FirstPart + Del + Year;
+  end
+  else
+    Result := BasePath; // Для остальных платформ возвращаем полный путь после eXo
+end;
+
+procedure TSGLMainFormHelper.Aria2Download(Language: String);
+var
+  AppPath, CmdLine, FullPath, ExoFolder, YearStr: string;
+  Game: TGameData;
+  TorrentFile, SaveDir, FinalDir, FileInTorrent, ZIPFile, isWin9x, isWin9xTorrent: string;
+  TorrentIdent, TorrentLine: string;
+  TorrentParts: TStringList;
+begin
+  if ListView1.ItemIndex = -1 then Exit;
+
+  // 1. Данные выбранной игры — берём поля из уже полученной записи, без повторного индексирования
+  Game := FGameData[FFilteredIndices[ListView1.ItemIndex]];
+  AppPath := Game.ApplicationPath;
+  CmdLine := Game.CommandLine;
+  FullPath := TPath.Combine(LaunchBoxDir, AppPath);
+
+  // 2. Папка eXo и год вычисляются один раз и переиспользуются
+  ExoFolder := GetExoFolderName(FullPath, '\');
+  YearStr := IntToStr(Game.ReleaseYear);
+
+  ZIPFile := GetExecPath + IncludeTrailingPathDelimiter('eXo') +
+               IncludeTrailingPathDelimiter(ExoFolder) +
+               ChangeFileExt(ExtractFileName(FullPath), '') + '.zip';
+
+  TorrentParts := TStringList.Create;
+  try
+    TorrentParts.Delimiter := '|';
+    TorrentParts.StrictDelimiter := True;
+    TorrentParts.DelimitedText := FTorrentConfig.ReadString(Game.Platforms, Language, '');
+
+    if TorrentParts.Count > 0 then
+      TorrentFile := GetExecPath + 'SGLauncher\torrents\' + TorrentParts[0];
+
+    // Третья часть (SaveDir) — конечная папка установки игры
+    if TorrentParts.Count > 2 then
+     begin
+      isWin9x := GetExoFolderNamewithYear(TorrentParts[2], '\', YearStr);
+      isWin9xTorrent := isWin9x;
+      FinalDir := GetExecPath + IncludeTrailingPathDelimiter('eXo') + StringReplace(IncludeTrailingPathDelimiter(isWin9x), '/', '\', [rfReplaceAll]);
+      FileInTorrent := 'eXo/' + StringReplace(isWin9xTorrent,'\', '/', [rfReplaceAll]) + '/' + ChangeFileExt(ExtractFileName(FullPath), '') + '.zip';
+     end;
+
+  finally
+    TorrentParts.Free;
+  end;
+
+  // 4. Качаем торрентом вместо запуска
+  SaveDir := GetExecPath + IncludeTrailingPathDelimiter('SGLauncher\temp') + ChangeFileExt(ExtractFileName(FullPath), '');
+  TAria2Thread.Create(TorrentFile, SaveDir, FinalDir, FileInTorrent, Game.RootFolder, '');
+end;
+
+// Возвращает полный путь к ZIP‑архиву для указанной игры и языка
+function TSGLMainFormHelper.GetZipPathForLanguage(const G: TGameData; const Language: string): string;
+var
+  TorrentParts: TStringList;
+  PathInTorrent, YearStr, isWin9x: string;
+begin
+  Result := '';
+  TorrentParts := TStringList.Create;
+  try
+    TorrentParts.Delimiter := '|';
+    TorrentParts.StrictDelimiter := True;
+    TorrentParts.DelimitedText := SGLMainForm.FTorrentConfig.ReadString(G.Platforms, Language, '');
+    if TorrentParts.Count < 3 then Exit;
+
+    PathInTorrent := TorrentParts[2];
+    YearStr := IntToStr(G.ReleaseYear);
+    isWin9x := GetExoFolderNamewithYear(PathInTorrent, '\', YearStr);
+    Result := GetExecPath + 'eXo\' +
+              StringReplace(isWin9x, '/', '\', [rfReplaceAll]) + '\' +
+              ChangeFileExt(ExtractFileName(G.ApplicationPath), '') + '.zip';
+  finally
+    TorrentParts.Free;
+  end;
+end;
+
+function TSGLMainFormHelper.TorrentFileExists(const G: TGameData; const Language: string): Boolean;
+var
+  Line: string;
+  TorrentParts: TStringList;
+  TorrentPath: string;
+begin
+  Result := False;
+  Line := FTorrentConfig.ReadString(G.Platforms, Language, '');
+  if Line = '' then Exit;
+  TorrentParts := TStringList.Create;
+  try
+    TorrentParts.Delimiter := '|';
+    TorrentParts.StrictDelimiter := True;
+    TorrentParts.DelimitedText := Line;
+    if TorrentParts.Count = 0 then Exit;
+    TorrentPath := GetExecPath + 'SGLauncher\torrents\' + TorrentParts[0];
+    Result := FileExists(TorrentPath);
+  finally
+  TorrentParts.Free;
+  end;
+end;
+
+function TSGLMainFormHelper.IsGameFolderExists(const G: TGameData; const Language: string): Boolean;
+var
+  Line, ReadPath, GameName: string;
+  TorrentParts: TStringList;
+begin
+  Result := False;
+  if (G.Platforms = '') or (Language = '') then Exit;
+
+  Line := FTorrentConfig.ReadString(G.Platforms, Language, '');
+  if Line = '' then Exit;
+
+  TorrentParts := TStringList.Create;
+  try
+    TorrentParts.Delimiter := '|';
+    TorrentParts.StrictDelimiter := True;
+    TorrentParts.DelimitedText := Line;
+    if TorrentParts.Count < 2 then Exit; // нужны как минимум два поля
+
+    ReadPath := TorrentParts[1]; // read game location (второе поле)
+
+    // Имя игры (папка) без расширения
+    GameName := ExtractFileName(ExcludeTrailingPathDelimiter(ExtractFilePath(G.ApplicationPath)))+'\'+ExtractFileName(G.ApplicationPath);
+    if GameName = '' then Exit;
+
+    // Полный путь к папке игры
+    var FullPath := GetExecPath + ReadPath + '\' + GameName;
+            //DirectoryExists(FullPath) -> without "+'\'+ExtractFileName(G.ApplicationPath)"
+    Result := FileExists(FullPath);
+  finally
+    TorrentParts.Free;
   end;
 end;
 

@@ -11,7 +11,7 @@ uses
   System.TypInfo, SyncObjs;
 
 const
-  sReleaseDate = '25.07.2026';
+  sReleaseDate = '25.08.2026';
   //Бинарный кэш для игр
   CACHE_VERSION: Word = 1;
 
@@ -108,6 +108,10 @@ type
     PlatformBtn: TButton;
     Favorites1: TMenuItem;
     N8: TMenuItem;
+    Download1: TMenuItem;
+    DeleteZIP1: TMenuItem;
+    N9: TMenuItem;
+    sepDynamicStart: TMenuItem;
     procedure FormResize(Sender: TObject);
     procedure ListView1Data(Sender: TObject; Item: TListItem);
     procedure ListView1SelectItem(Sender: TObject; Item: TListItem; Selected: Boolean);
@@ -153,6 +157,8 @@ type
     procedure pmPlatformFilterPopup(Sender: TObject);
     procedure PlatformBtnClick(Sender: TObject);
     procedure Favorites1Click(Sender: TObject);
+    procedure Download1Click(Sender: TObject);
+    procedure DeleteZIP1Click(Sender: TObject);
   protected
     NConfig: TMemIniFile;
     FClosing: Boolean;
@@ -228,6 +234,8 @@ type
     procedure StyleMenuClick(Sender: TObject);
     function GetFConfig: TMemIniFile;
     function GetNConfig: TMemIniFile;
+    //Загрузка торрентов
+    function GetFTorrentConfig: TMemIniFile;
     procedure RegIni(Write: Boolean);
     procedure WMPostScrollSync(var Msg: TMessage); message WM_USER + 100;
     procedure WMCopyData(var Msg: TWMCopyData); message WM_COPYDATA;
@@ -238,6 +246,8 @@ type
     procedure LabelFilterMenuItemClick(Sender: TObject);
    public
     FConfig: TMemIniFile;
+    //Загрузка торрентов
+    FTorrentConfig: TMemIniFile;
   end;
 
 var
@@ -304,6 +314,13 @@ begin
   if NConfig = nil then
   NConfig := TMemIniFile.Create(ExtractFilePath(ParamStr(0))+AppName+'ImgNames.ini',TEncoding.UTF8);
   Result := NConfig;
+end;
+
+function TSGLMainForm.GetFTorrentConfig: TMemIniFile;
+begin
+  if FTorrentConfig = nil then
+  FTorrentConfig := TMemIniFile.Create(ExtractFilePath(ParamStr(0)) + 'torrents\torrents.txt', TEncoding.UTF8);
+  Result := FTorrentConfig;
 end;
 
 procedure TSGLMainForm.RegIni(Write: Boolean);
@@ -443,6 +460,7 @@ end;
 procedure TSGLMainForm.FormCloseQuery(Sender: TObject; var CanClose: Boolean);
 var
   WaitCount: Integer;
+  TempFolder: String;
 begin
   FClosing := True;
 
@@ -518,6 +536,19 @@ begin
 
   if Assigned(FConfig) then FreeAndNil(FConfig);
   if Assigned(NConfig) then FreeAndNil(NConfig);
+
+  // Загрузка торрентов
+  if Assigned(FTorrentConfig) then FreeAndNil(FTorrentConfig);
+  // Удаление папки temp рядом с программой, если она есть
+  TempFolder := ExtractFilePath(Application.ExeName) + 'temp';
+  if TDirectory.Exists(TempFolder) then
+  begin
+    try
+      TDirectory.Delete(TempFolder, True);
+    except
+      // игнорируем ошибку удаления (например, файл занят), чтобы не блокировать закрытие
+    end;
+  end;
 end;
 
 procedure TSGLMainForm.FormCreate(Sender: TObject);
@@ -556,6 +587,7 @@ begin
   LaunchBoxDir := 'E:\LaunchBox'{GetExecPath};
   GetFConfig;
   GetNConfig;
+  GetFTorrentConfig;
   RegIni(False);
 
   if EnabledMiniatures then
@@ -701,6 +733,7 @@ begin
     Handled := False; // Показывать меню на элементе
     ListView1.ItemIndex := Item.Index;
     UpdateFavoritesMenuItem;
+    UpdateMenuItemsForCurrentGame;
    end;
 end;
 
@@ -1049,6 +1082,7 @@ begin
     ifFile := False;
     Edit1.Text := FConfig.ReadString('SGAllSettings', 'IgnoreDir', '');
     DialogDir := LaunchBoxDir;
+    platformcombo.Visible := False;
      if (Showmodal <> mrCancel) then
       begin
        FConfig.WriteString('SGAllSettings', 'IgnoreDir', Edit1.Text);
@@ -1072,11 +1106,16 @@ begin
     Label2.Caption := 'Changes will take effect after switching tabs.';
     Button3.Hint := 'Select a dir';
     ifFile := False;
-    Edit1.Text := FConfig.ReadString('SGAllSettings', 'LanguagesPack', '');
+    Edit1.Text := FConfig.ReadString('LanguagesPack', 'MS-DOS', '');
     DialogDir := LaunchBoxDir;
+    platformcombo.Items.Clear;
+    platformcombo.Visible := True;
+    FConfig.ReadSection('LanguagesPack',platformcombo.Items);
+    if platformcombo.Items.Count > 0 then
+      platformcombo.ItemIndex := 0;
      if (Showmodal <> mrCancel) then
       begin
-       FConfig.WriteString('SGAllSettings', 'LanguagesPack', Edit1.Text);
+       FConfig.WriteString('LanguagesPack', platformcombo.Items[platformcombo.ItemIndex], Edit1.Text);
        FConfig.UpdateFile;
       end;
    end;
@@ -1169,6 +1208,7 @@ begin
     Edit1.Text := NConfig.ReadString(FGameData[FFilteredIndices[ListView1.ItemIndex]].Platforms,
       FGameData[FFilteredIndices[ListView1.ItemIndex]].ID, '');
     DialogDir := LaunchBoxDir + '\Images\' + FGameData[FFilteredIndices[ListView1.ItemIndex]].Platforms;
+    platformcombo.Visible := False;
      if (Showmodal <> mrCancel) then
       begin
        if Edit1.Text = '' then
@@ -1703,6 +1743,91 @@ begin
 if Sender is TLabel then
     TLabel(Sender).Font.Style := TLabel(Sender).Font.Style - [fsUnderline];
 end;
+
+procedure TSGLMainForm.Download1Click(Sender: TObject);
+var
+  raw: string;
+  langs: TArray<string>;
+  AvailableLangs: TArray<string>;
+  selectedLang: string;
+  Game: TGameData;
+  L: string;
+begin
+  if ListView1.ItemIndex = -1 then Exit;
+
+  Game := FGameData[FFilteredIndices[ListView1.ItemIndex]];
+
+  // Список языков из настроек (всегда включает 'english')
+  raw := FConfig.ReadString('LanguagesPack', Game.Platforms, '');
+  langs := PrepareLanguageList(raw);
+
+  // Оставляем только те языки, для которых папка игры существует
+  SetLength(AvailableLangs, 0);
+  for L in langs do
+    if IsGameFolderExists(Game, L) and TorrentFileExists(Game, L) then
+    begin
+      SetLength(AvailableLangs, Length(AvailableLangs) + 1);
+      AvailableLangs[High(AvailableLangs)] := L;
+    end;
+
+  // Если ни одного языка не найдено – оставляем английский как резерв
+  if Length(AvailableLangs) = 0 then
+  begin
+    SetLength(AvailableLangs, 1);
+    AvailableLangs[0] := 'english';
+  end;
+
+  // Диалог выбора языка и запуск загрузки
+  if ShowComboDialog(AvailableLangs, selectedLang, 'Выберите язык') then
+    Aria2Download(selectedLang);
+end;
+
+procedure TSGLMainForm.DeleteZIP1Click(Sender: TObject);
+var
+  raw: string;
+  langs: TArray<string>;
+  selectedLang: string;
+  ZipPath: string;
+  Game: TGameData;
+begin
+  if ListView1.ItemIndex = -1 then Exit;
+
+  Game := FGameData[FFilteredIndices[ListView1.ItemIndex]];
+
+  raw := FConfig.ReadString('LanguagesPack', Game.Platforms, '');
+  langs := PrepareLanguageList(raw);
+
+  // Оставляем только те языки, для которых реально существует ZIP‑архив
+  var AvailableLangs: TArray<string>;
+  SetLength(AvailableLangs, 0);
+  for var L in langs do
+  begin
+    ZipPath := GetZipPathForLanguage(Game, L);
+    if (ZipPath <> '') and FileExists(ZipPath) then
+    begin
+      SetLength(AvailableLangs, Length(AvailableLangs) + 1);
+      AvailableLangs[High(AvailableLangs)] := L;
+    end;
+  end;
+
+  if Length(AvailableLangs) = 0 then
+  begin
+    MessageDlg('No setup archives found for deletion.', mtInformation, [mbOK], 0);
+    Exit;
+  end;
+
+  if ShowComboDialog(AvailableLangs, selectedLang, 'Select the language of the archive to delete') then
+  begin
+    ZipPath := GetZipPathForLanguage(Game, selectedLang);
+    if (ZipPath <> '') and FileExists(ZipPath) then
+    begin
+      if MessageDlg('Delete archive?'#10#10 + ZipPath,
+                    mtConfirmation, [mbYes, mbNo], 0) = mrYes then
+        DeleteFile(ZipPath);
+    end;
+  end;
+end;
+
 //-----------------------------------------------------------------------------
 
 end.

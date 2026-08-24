@@ -205,6 +205,16 @@ object HelpForm: THelpForm
           ''
           'Move the SGLauncher folder to your LaunchBox folder.'
           ''
+          'Example:'
+          '  D:\LaunchBox\eXo\'
+          '  D:\LaunchBox\SGLauncher\SGLauncher.exe'
+          ' Additional:'
+          '  D:\LaunchBox\SGLauncher\torrents\'
+          ''
+          
+            ' The "torrents" folder is not required when using the full versi' +
+            'ons of eXo projects. '
+          ' Download and unpack "torrents.zip" and restart the launcher'
           
             '// -------------------------------------------------------------' +
             '------Keyboard shortcuts----------------------------------------' +

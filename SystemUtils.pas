@@ -4,7 +4,7 @@ interface
 
 uses Windows, Classes, SysUtils, Messages, ActiveX, ShlObj, Vcl.Dialogs, ShellApi,
      ExtCtrls, IniFiles, Forms, ComObj, StdCtrls, IOUtils, Graphics, Menus, CommCtrl,
-     Vcl.Themes;
+     Vcl.Themes, Vcl.Controls;
 
 // GENERAL FUNCTIONS
 // ---------------------------------------------------------------------------
@@ -34,6 +34,9 @@ function IsInStartupFolder: Boolean;
 function GetLastFolderName(const Path: string): string;
 function ExtractBaseTitle(const FileName: string): string;
 procedure DrawAboutImage(PaintBox: TPaintBox);
+function PrepareLanguageList(const RawList: string): TArray<string>;
+function ShowComboDialog(const Items: array of string; var Selected: string;
+                         const ACaption: string = 'Выберите вариант'): Boolean;
 // ---------------------------------------------------------------------------
 
 implementation
@@ -614,6 +617,117 @@ begin
     PaintBox.Canvas.StretchDraw(Rect(2, 2, 514, 514),Icon);
   finally
     Icon.Free;
+  end;
+end;
+
+function PrepareLanguageList(const RawList: string): TArray<string>;
+var
+  sl: TStringList;
+  i: Integer;
+  lang: string;
+begin
+  sl := TStringList.Create;
+  try
+    // Разбиваем строку по ';'
+    sl.Delimiter := ';';
+    sl.StrictDelimiter := True;
+    sl.DelimitedText := RawList;
+
+    // Убираем ведущий '!' у каждого элемента и добавляем в Result
+    for i := 0 to sl.Count - 1 do
+    begin
+      lang := sl[i];
+      if (Length(lang) > 0) and (lang[1] = '!') then
+        Delete(lang, 1, 1);   // удаляем первый символ
+      // Если строка не пустая, добавляем
+      if lang <> '' then
+        sl[i] := lang
+      else
+        sl[i] := '';  // помечаем пустые для последующего удаления
+    end;
+
+    // Удаляем пустые строки (если были)
+    for i := sl.Count - 1 downto 0 do
+      if sl[i] = '' then
+        sl.Delete(i);
+
+    // Проверяем наличие 'english'
+    if sl.IndexOf('english') = -1 then
+      sl.Insert(0, 'english');   // добавляем первым
+
+    // Преобразуем TStringList в массив
+    Result := sl.ToStringArray;
+  finally
+    sl.Free;
+  end;
+end;
+
+function ShowComboDialog(const Items: array of string; var Selected: string;
+                         const ACaption: string = 'Выберите вариант'): Boolean;
+var
+  frm: TForm;
+  cmb: TComboBox;
+  btnOk, btnCancel: TButton;
+  i: Integer;
+begin
+  Result := False;
+  Selected := '';
+
+  frm := TForm.Create(Application);
+  try
+    frm.Caption := ACaption;
+    frm.Width := 320;
+    frm.Height := 170;
+    frm.Position := poScreenCenter;
+    frm.BorderStyle := bsDialog;
+
+    // ComboBox
+    cmb := TComboBox.Create(frm);
+    cmb.Parent := frm;
+    cmb.Left := 20;
+    cmb.Top := 20;
+    cmb.Width := frm.Width - 60;
+    cmb.Style := csDropDownList;
+
+    // Заполняем из переданного массива
+    for i := Low(Items) to High(Items) do
+      cmb.Items.Add(Items[i]);
+
+    if cmb.Items.Count > 0 then
+      cmb.ItemIndex := 0
+    else
+      cmb.ItemIndex := -1;
+
+    // Кнопка OK
+    btnOk := TButton.Create(frm);
+    btnOk.Parent := frm;
+    btnOk.Caption := 'OK';
+    btnOk.Left := 60;
+    btnOk.Top := 70;
+    btnOk.Width := 80;
+    btnOk.ModalResult := mrOk;
+    btnOk.Default := True;   // Enter → OK
+
+    // Кнопка Cancel
+    btnCancel := TButton.Create(frm);
+    btnCancel.Parent := frm;
+    btnCancel.Caption := 'Отмена';
+    btnCancel.Left := btnOk.Left + btnOk.Width + 20;
+    btnCancel.Top := 70;
+    btnCancel.Width := 80;
+    btnCancel.ModalResult := mrCancel;
+    btnCancel.Cancel := True;  // Escape → Отмена
+
+    if frm.ShowModal = mrOk then
+    begin
+      if cmb.ItemIndex >= 0 then
+        Selected := cmb.Items[cmb.ItemIndex]
+      else
+        Selected := '';
+      Result := True;
+    end;
+  finally
+    frm.Free;
   end;
 end;
 

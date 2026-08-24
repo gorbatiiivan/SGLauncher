@@ -75,4 +75,13 @@ object DiagForm: TDiagForm
     TabOrder = 1
     OnClick = Button3Click
   end
+  object platformcombo: TComboBox
+    Left = 192
+    Top = 8
+    Width = 169
+    Height = 23
+    Style = csDropDownList
+    TabOrder = 4
+    OnChange = platformcomboChange
+  end
 end
