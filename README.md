@@ -42,8 +42,11 @@ No installation required, just move the SGLauncher folder to your LaunchBox fold
 
 Example: 
 
+         D:\LaunchBox\eXo\
+         
          D:\LaunchBox\SGLauncher\SGLauncher.exe
+         
+         D:\LaunchBox\SGLauncher\torrents\
 
-         D:\LaunchBox\eXo\...
 
 ------------------------------------------------------------------------------------------------------
