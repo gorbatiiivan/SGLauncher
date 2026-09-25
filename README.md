@@ -6,13 +6,11 @@ Lightweight launcher for eXo collections.
 
 
 
-
-
-<img width="1920" height="1040" alt="Screenshot 2026-05-21 083801" src="https://github.com/user-attachments/assets/0d17abb7-a375-49b1-9304-0ebbedfd8b46" />
+<img width="1154" height="793" alt="Screenshot 2026-09-25 184113" src="https://github.com/user-attachments/assets/6320351b-f76c-4c34-bc9f-a49a812fd003" />
 
 
 
-<img width="1920" height="1040" alt="Screenshot 2026-05-21 083930" src="https://github.com/user-attachments/assets/1d71c50f-2614-43c8-9a9b-8aa879d99390" />
+<img width="1154" height="793" alt="Screenshot 2026-09-25 184159" src="https://github.com/user-attachments/assets/20bafe41-9913-41bd-9b19-ad0b13112043" />
 
 
 
