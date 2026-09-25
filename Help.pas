@@ -21,6 +21,7 @@ type
     Memo1: TMemo;
     TabSheet2: TTabSheet;
     Memo2: TMemo;
+    Label4: TLabel;
     procedure PaintBox1Paint(Sender: TObject);
     procedure Label5Click(Sender: TObject);
   private
@@ -45,7 +46,7 @@ end;
 
 procedure THelpForm.Label5Click(Sender: TObject);
 begin
-  ShellOpen(Label5.Hint);
+  ShellOpen((Sender as TLabel).Hint);
 end;
 
 end.

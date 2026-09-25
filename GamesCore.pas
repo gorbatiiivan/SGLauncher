@@ -6,12 +6,14 @@ uses
   Unit1, SystemUtils, FullScreenImage, Winapi.Windows, Winapi.Messages, System.SysUtils,
   System.Types, System.IOUtils, Vcl.Graphics, Vcl.Controls, Vcl.Forms, System.Classes,
   Vcl.Dialogs, Vcl.ComCtrls, Vcl.ExtCtrls, Vcl.ImgList, SyncObjs, PsAPI,
-  Vcl.Imaging.jpeg, Vcl.Imaging.pngimage, Vcl.Imaging.GIFImg, Xml.XMLIntf,
-  Xml.XMLDoc, Math, ActiveX, ShellAPI, Vcl.Menus, ShlObj, StrUtils,
+  Vcl.Imaging.jpeg, Vcl.Imaging.pngimage, Vcl.Imaging.GIFImg,
+  Math, ActiveX, ShellAPI, Vcl.Menus, ShlObj, StrUtils,
   System.Generics.Collections, System.Generics.Defaults;
 
 type
   TSGLMainFormHelper = class helper for TSGLMainForm
+    procedure CanvasTextShadowBorder(Canvas: TCanvas; const Text: string; R: TRect;
+       Flags: UINT; ShadowColor: TColor = clBlack; Width: Integer = 1);
     function IsGameInstalled(const G: TGameData; LanguagesPack: TStringList = nil): Boolean;
     procedure AddGameToArray(const G: TGameData);
     procedure SortGameData;
@@ -76,11 +78,49 @@ type
     function GetZipPathForLanguage(const G: TGameData; const Language: string): string;
     function TorrentFileExists(const G: TGameData; const Language: string): Boolean;
     function IsGameFolderExists(const G: TGameData; const Language: string): Boolean;
+    // Превью по наведению (Hot) в ListView
+    procedure StartHoverLoadThread;
+    procedure HoverLoadThreadProc;
+    procedure RequestHoverImage(RealIndex: Integer);
+    function  GetHoverQueuedID: string;
+    procedure ProcessHoverRequest(RealIndex: Integer);
+    function LoadScaledHoverBitmapWIC(const FilePath: string): TBitmap;
+    function  LoadScaledHoverBitmap(const FilePath: string): TBitmap;
+    procedure HoverDwellTimerTimer(Sender: TObject);
   end;
 
 implementation
 
-uses Aria2Thread;
+uses Aria2Thread, XMLLiteCore;
+
+// Вспомогательная процедура
+procedure TSGLMainFormHelper.CanvasTextShadowBorder(Canvas: TCanvas; const Text: string; R: TRect;
+  Flags: UINT; ShadowColor: TColor = clBlack; Width: Integer = 1);
+var
+  OldColor: TColor;
+  OldStyle: TBrushStyle;
+  dx, dy: Integer;
+  SR: TRect;
+begin
+  OldColor := Canvas.Font.Color;
+  OldStyle := Canvas.Brush.Style;
+  Canvas.Brush.Style := bsClear;
+
+  Canvas.Font.Color := ShadowColor;
+  for dy := -Width to Width do
+    for dx := -Width to Width do
+      if (dx <> 0) or (dy <> 0) then
+      begin
+        SR := R;
+        OffsetRect(SR, dx, dy);
+        DrawText(Canvas.Handle, PChar(Text), Length(Text), SR, Flags);
+      end;
+
+  Canvas.Font.Color := OldColor;
+  DrawText(Canvas.Handle, PChar(Text), Length(Text), R, Flags);
+
+  Canvas.Brush.Style := OldStyle;
+end;
 
 // XML
 //------------------------------------------------------------------------------
@@ -302,7 +342,7 @@ procedure TSGLMainFormHelper.UpdateExtrasMenu(const GameIndex: Integer);
           Icon := TIcon.Create;
           try
             Icon.Handle := FileInfo.hIcon;
-            SubMenu.ImageIndex := PopupMenu1.Images.AddIcon(Icon);
+            SubMenu.ImageIndex := ListViewPopupActionBar.Images.AddIcon(Icon);
           finally
             DestroyIcon(FileInfo.hIcon);
             Icon.Free;
@@ -343,7 +383,7 @@ procedure TSGLMainFormHelper.UpdateExtrasMenu(const GameIndex: Integer);
           Icon := TIcon.Create;
           try
             Icon.Handle := FileInfo.hIcon;
-            MenuItem.ImageIndex := PopupMenu1.Images.AddIcon(Icon);
+            MenuItem.ImageIndex := ListViewPopupActionBar.Images.AddIcon(Icon);
           finally
             DestroyIcon(FileInfo.hIcon);
             Icon.Free;
@@ -413,13 +453,13 @@ procedure TSGLMainFormHelper.UpdateExtrasMenu(const GameIndex: Integer);
   if not TDirectory.Exists(LangPath) then
     Exit;
 
-  LangMenu := TMenuItem.Create(PopupMenu1);
+  LangMenu := TMenuItem.Create(ListViewPopupActionBar);
   LangMenu.Caption := LangCaption;
 
   AddFolderToMenu(LangMenu, LangPath);
 
   if LangMenu.Count > 0 then
-    PopupMenu1.Items.Add(LangMenu)
+    ListViewPopupActionBar.Items.Add(LangMenu)
   else
     LangMenu.Free;
  end;
@@ -457,12 +497,10 @@ var
   MarkerIdx: Integer;
 begin
   // Удаляем всё, что после маркера
-  MarkerIdx := PopupMenu1.Items.IndexOf(sepDynamicStart);
+  MarkerIdx := ListViewPopupActionBar.Items.IndexOf(sepDynamicStart);
   if MarkerIdx >= 0 then
-  begin
-    while PopupMenu1.Items.Count > MarkerIdx + 1 do
-      PopupMenu1.Items.Delete(PopupMenu1.Items.Count - 1);
-  end;
+    while ListViewPopupActionBar.Items.Count > MarkerIdx + 1 do
+      ListViewPopupActionBar.Items.Delete(ListViewPopupActionBar.Items.Count - 1);
 
   if GameIndex = -1 then Exit;
   AppPath := FGameData[GameIndex].ApplicationPath;
@@ -483,26 +521,26 @@ begin
     Exit;
 
   // разделитель перед дополнительными пунктами
-  Separator := TMenuItem.Create(PopupMenu1);
+  Separator := TMenuItem.Create(ListViewPopupActionBar);
   Separator.Caption := '-';
-  PopupMenu1.Items.Add(Separator);
+  ListViewPopupActionBar.Items.Add(Separator);
 
   // создаём ImageList если его ещё нет
-  if not Assigned(PopupMenu1.Images) then
+  if not Assigned(ListViewPopupActionBar.Images) then
   begin
-    PopupMenu1.Images := TImageList.Create(PopupMenu1);
-    PopupMenu1.Images.ColorDepth := cd32Bit;
-    PopupMenu1.Images.Width  := 16;
-    PopupMenu1.Images.Height := 16;
+    ListViewPopupActionBar.Images := TImageList.Create(ListViewPopupActionBar);
+    ListViewPopupActionBar.Images.ColorDepth := cd32Bit;
+    ListViewPopupActionBar.Images.Width  := 16;
+    ListViewPopupActionBar.Images.Height := 16;
   end;
 
-  if Assigned(PopupMenu1.Images) then
-  PopupMenu1.Images.Clear;
+  if Assigned(ListViewPopupActionBar.Images) then
+  ListViewPopupActionBar.Images.Clear;
 
   // Добавляем основную папку Extras, если она существует
   if HasItems then
   begin
-    ExtrasMenu := TMenuItem.Create(PopupMenu1);
+    ExtrasMenu := TMenuItem.Create(ListViewPopupActionBar);
     ExtrasMenu.Caption := 'English';
 
     // сразу добавляем содержимое Extras в основное меню
@@ -510,7 +548,7 @@ begin
 
     // если папка не пустая - добавляем пункт
     if ExtrasMenu.Count > 0 then
-      PopupMenu1.Items.Add(ExtrasMenu)
+      ListViewPopupActionBar.Items.Add(ExtrasMenu)
     else
       ExtrasMenu.Free;
   end;
@@ -544,10 +582,10 @@ begin
   PrevImgBtn.Enabled := False;
 
   // очистить накопленные иконки
-  while PopupMenu1.Items.Count > 12 do
-    PopupMenu1.Items.Delete(PopupMenu1.Items.Count - 1);
-  if PopupMenu1.Images <> nil then
-    (PopupMenu1.Images as TImageList).Clear;
+  while ListViewPopupActionBar.Items.Count > ListViewPopupActionBar.Items.IndexOf(sepDynamicStart) + 1 do
+    ListViewPopupActionBar.Items.Delete(ListViewPopupActionBar.Items.Count - 1);
+  if ListViewPopupActionBar.Images <> nil then
+    (ListViewPopupActionBar.Images as TImageList).Clear;
 
   // очистка миниатюр
   FThumbnailCancel := True;
@@ -562,12 +600,26 @@ begin
   while FlowPanel1.ControlCount > 0 do
     FlowPanel1.Controls[0].Free;
 
+  // Освобождаем все битмапы из кэша
+  if Assigned(FHoverBitmap) then
+    FHoverBitmap.SetSize(0, 0);
+  FHoverBitmapID := '';
+  FHoverQueuedID := '';
+
   FSelectedPanel := nil;
   FAllImageFiles := nil;
   FCurrentThumbnailIndex := 0;
   // Сбрасываем флаги потока
   FThumbnailPending := False;
   FThumbnailCancel := False;
+
+  // Очистка кэша
+  FHoverLock.Enter;
+  try
+    FHoverNotFoundCache.Clear;
+  finally
+    FHoverLock.Leave;
+  end;
   //------------------------------------
 end;
 
@@ -857,7 +909,7 @@ begin
   // 3. Общая подготовка UI
   FClosing := False;
   FLoadingComplete := False;
-  UseBinaryCache1.Enabled := False;
+  UseBinaryCacheMenuItem.Enabled := False;
 
   if ADeleteCache then
   begin
@@ -906,7 +958,7 @@ begin
             PlatformBtn.Enabled := True;
             ScrollBox1.Enabled := True;
             NextImgBtn.Enabled := True;
-            UseBinaryCache1.Enabled := True;
+            UseBinaryCacheMenuItem.Enabled := True;
             TrayIcon.Icon := Application.Icon;
             SGLMainForm.Icon := Application.Icon;
 
@@ -1178,40 +1230,23 @@ begin
 
   // ===== RUN CAPTION =====
   if FGameData[RealIndex].IsInstalled then
-  Run1.Caption := 'Run' else Run1.Caption := 'Install';
+  RunMenuItem.Caption := 'Run' else RunMenuItem.Caption := 'Install';
 
   // ===== MANUAL =====
-  Manual1.Enabled :=
+  ManualMenuItem.Enabled :=
     FileExists(LaunchBoxDir + '\' + FGameData[RealIndex].Manual);
 
   // ===== ConfigurationPath =====
   if FGameData[RealIndex].ConfigurationPath = '' then
-    Configuration1.Enabled := False
+    ConfigurationMenuItem.Enabled := False
    else
     begin
      //Если игра не установлена нажатие недоступно.
-     Configuration1.Enabled := FGameData[RealIndex].IsInstalled;
+     ConfigurationMenuItem.Enabled := FGameData[RealIndex].IsInstalled;
     end;
-
-  if DirectoryExists(ExtractFilePath(ParamStr(0))+'torrents') and
-   FileExists(ExtractFilePath(ParamStr(0))+'torrents\torrents.txt') and
-   SGLMainForm.FTorrentConfig.SectionExists(FGameData[RealIndex].Platforms) then
-  begin
-   Download1.Visible := IsExoFirstFolder(FGameData[RealIndex].ApplicationPath);
-   DeleteZIP1.Visible := IsExoFirstFolder(FGameData[RealIndex].ApplicationPath);
-   N1.Visible := IsExoFirstFolder(FGameData[RealIndex].ApplicationPath);
-  end else
-  begin
-   Download1.Visible := False;
-   DeleteZIP1.Visible := False;
-   N1.Visible := False;
-  end;
 
   // ===== ЗАПУСКАЕМ ПОТОК ДЛЯ ЗАГРУЗКИ ИЗОБРАЖЕНИЙ =====
   StartImageLoadThread(ItemIndex, RealIndex);
-
-  // ===== EXTRAS =====
-  UpdateExtrasMenu(RealIndex);
 end;
 
 procedure TSGLMainFormHelper.UpdateMenuItemsForCurrentGame;
@@ -1229,18 +1264,33 @@ begin
 
   // 2. Run / Install
   if FGameData[RealIndex].IsInstalled then
-    Run1.Caption := 'Run'
+    RunMenuItem.Caption := 'Run'
   else
-    Run1.Caption := 'Install';
+    RunMenuItem.Caption := 'Install';
 
   // 3. Configuration
   if FGameData[RealIndex].ConfigurationPath = '' then
-    Configuration1.Enabled := False
+    ConfigurationMenuItem.Enabled := False
   else
-    Configuration1.Enabled := FGameData[RealIndex].IsInstalled;
+    ConfigurationMenuItem.Enabled := FGameData[RealIndex].IsInstalled;
 
   // 4. Manual
-  Manual1.Enabled := FileExists(LaunchBoxDir + '\' + FGameData[RealIndex].Manual);
+  ManualMenuItem.Enabled := FileExists(LaunchBoxDir + '\' + FGameData[RealIndex].Manual);
+
+  // 5. Download / Delete archive
+  if DirectoryExists(ExtractFilePath(ParamStr(0))+'torrents') and
+   FileExists(ExtractFilePath(ParamStr(0))+'torrents\torrents.txt') and
+   SGLMainForm.FTorrentConfig.SectionExists(FGameData[RealIndex].Platforms) then
+  begin
+   DownloadarchiveMenuItem.Visible := IsExoFirstFolder(FGameData[RealIndex].ApplicationPath);
+   DeletearchiveMenuItem.Visible   := IsExoFirstFolder(FGameData[RealIndex].ApplicationPath);
+   N4.Visible                      := IsExoFirstFolder(FGameData[RealIndex].ApplicationPath);
+  end else
+  begin
+   DownloadarchiveMenuItem.Visible := False;
+   DeletearchiveMenuItem.Visible   := False;
+   N4.Visible                      := False;
+  end;
 end;
 
 procedure TSGLMainFormHelper.LoadImageWithRetry(const FileName: string;
@@ -1525,7 +1575,8 @@ var
       if ForcedName <> '' then
       begin
         if SameText(FileName, ForcedName) or
-           StartsText(ForcedName + '-', FileName) then
+           StartsText(ForcedName + '-', FileName) or
+           MatchForcedNumberedName(FileName, ForcedName) then
         begin
           ImageList.Add(FilePath);
         end;
@@ -1683,7 +1734,7 @@ begin
     Exit;
   end;
 
-  UseBinaryCache := FConfig.ReadBool('SGAllSettings', 'UseBinaryCache', True);
+  UseBinaryCache := FConfig.ReadBool('SGAllSettings', 'UseBinaryCache', False);
 
   // ← Пробуем загрузить из кэша
   if UseBinaryCache and IsCacheValid(CacheFile, Dir) and LoadGameCache(CacheFile) then
@@ -1735,73 +1786,55 @@ end;
 
 procedure TSGLMainFormHelper.LoadXMLToArrayThreadSafe(const XMLFileName: string);
 var
-  XML: IXMLDocument;
-  Nodes: IXMLNodeList;
-  Node, Child: IXMLNode;
-  G: TGameData;
-  i, j: Integer;
-  NodeName: string;
   PlatformFromFile: string;
+  Stats: TXMLParseStats;
 begin
-  XML := TXMLDocument.Create(nil);
-  try
-    XML.LoadFromFile(XMLFileName);
-    XML.Active := True;
+  PlatformFromFile := ChangeFileExt(ExtractFileName(XMLFileName), '');
 
-    if (XML.DocumentElement = nil) then Exit;
-
-    Nodes := XML.DocumentElement.ChildNodes;
-    PlatformFromFile := ChangeFileExt(ExtractFileName(XMLFileName), '');
-
-    for i := 0 to Nodes.Count - 1 do
+  Stats := ParseXMLRecords(XMLFileName, 'Game',
+    function(const GetField: TGetXMLFieldFunc): Boolean
+    var
+      G: TGameData;
     begin
-      Node := Nodes[i];
-      if Node.NodeName <> 'Game' then Continue;
-
       FillChar(G, SizeOf(G), 0);
+      G.GameName := Trim(GetField('Title'));
+      Result := G.GameName <> ''; // без Title запись отклоняется — попадёт в Stats.RecordsRejected
+      if not Result then Exit;
 
-      for j := 0 to Node.ChildNodes.Count - 1 do
-      begin
-        Child := Node.ChildNodes[j];
-        if not Assigned(Child) then Continue;
+      G.ApplicationPath   := GetField('ApplicationPath');
+      G.Platforms         := Trim(GetField('Platform'));
+      G.Developer         := Trim(GetField('Developer'));
+      G.Publisher         := Trim(GetField('Publisher'));
+      G.Genre             := Trim(GetField('Genre'));
+      G.Series            := Trim(GetField('Series'));
+      G.ReleaseYear       := StrToIntDef(Copy(Trim(GetField('ReleaseDate')), 1, 4), 0);
+      G.Notes             := Trim(GetField('Notes'));
+      G.Manual            := Trim(GetField('ManualPath'));
+      G.ConfigurationPath := Trim(GetField('ConfigurationPath'));
+      G.RootFolder        := Trim(GetField('RootFolder'));
+      G.ID                := Trim(GetField('ID'));
+      G.CommandLine       := Trim(GetField('CommandLine'));
+      G.PlayMode          := Trim(GetField('PlayMode'));
+      G.Source            := Trim(GetField('Source'));
 
-        NodeName := Child.LocalName;
-
-        case IndexStr(NodeName, ['Title','ApplicationPath','Platform','Developer',
-                                  'Publisher','Genre','Series','ReleaseDate','Notes',
-                                  'ManualPath','ConfigurationPath','RootFolder','ID','CommandLine', 'PlayMode', 'Source']) of
-          0: G.GameName          := Trim(Child.Text);
-          1: G.ApplicationPath   := Child.Text;
-          2: G.Platforms         := Trim(Child.Text);
-          3: G.Developer         := Trim(Child.Text);
-          4: G.Publisher         := Trim(Child.Text);
-          5: G.Genre             := Trim(Child.Text);
-          6: G.Series            := Trim(Child.Text);
-          7: G.ReleaseYear       := StrToIntDef(Copy(Trim(Child.Text),1,4), 0);
-          8: G.Notes             := Trim(Child.Text);
-          9: G.Manual            := Trim(Child.Text);
-          10:G.ConfigurationPath := Trim(Child.Text);
-          11:G.RootFolder        := Trim(Child.Text);
-          12:G.ID                := Trim(Child.Text);
-          13:G.CommandLine       := Trim(Child.Text);
-          14:G.PlayMode          := Trim(Child.Text);
-          15:G.Source            := Trim(Child.Text);
-        end;
-      end;
-
-      if G.GameName = '' then Continue;
-
-      // Если платформа не указана в XML — берём из имени файла
       if G.Platforms = '' then
         G.Platforms := PlatformFromFile;
 
-      // Добавляем игру (с проверкой на дубликаты по ID)
       AddGameToArray(G);
+    end,
+    procedure(const Msg: string)
+    begin
+      // Сюда — существующий в проекте механизм логирования, если есть.
+      // Без этого диагностика (обрезанный файл, отклонённые записи)
+      // просто печаталась бы в никуда через OutputDebugString ниже.
+      OutputDebugString(PChar(Msg));
+    end);
 
-    end;
-  finally
-    XML := nil;
-  end;
+  // При желании можно среагировать на Stats.Truncated здесь же —
+  // например, показать пользователю предупреждение, что XML-файл
+  // обрезан и часть библиотеки могла не загрузиться.
+  // if Stats.Truncated then
+  //   ShowMessage(Format('Файл %s повреждён или обрезан, часть игр не загружена', [XMLFileName]));
 end;
 
 procedure TSGLMainFormHelper.LoadXMLFilesMultiThreaded(const XMLFiles: TStringDynArray);
@@ -1851,14 +1884,14 @@ begin
             if (GetTickCount - LastUpdate > 150) or (Loaded = FTotalXMLFiles) then
             begin
               var CapturedLoaded := Loaded;
+              var CapturedName := ChangeFileExt(ExtractFileName(XMLFiles[MyIdx]), '');
               TThread.Queue(nil,
                 procedure
                 begin
                   if not FClosing then
                   begin
-                    Caption := Format('Loading... %d%%  (%d/%d)',
-                      [CapturedLoaded * 100 div FTotalXMLFiles,
-                       CapturedLoaded, FTotalXMLFiles]);
+                    Caption := Format('Loading - %s (%d%%)',
+                      [CapturedName, CapturedLoaded * 100 div FTotalXMLFiles]);
                     TrayIcon.Hint := Caption;
                   end;
                 end);
@@ -1962,7 +1995,7 @@ begin
     SetupListViewColumns;
 
     // --- Вкладка "Installed": RefreshInstalledStatus уходит в фон ---
-    if SameText(SelectedPlatform, 'Installed') or SameText(SelectedPlatform, 'Favorites') then
+    if SameText(SelectedPlatform, 'Installed') {or SameText(SelectedPlatform, 'Favorites')} then
     begin
       // Пока заморожены — выставляем ширины и очищаем список,
       // чтобы при разморозке всё выглядело правильно сразу
@@ -3207,21 +3240,21 @@ procedure TSGLMainFormHelper.UpdateFavoritesMenuItem;
 var
   RealIndex: Integer;
 begin
-  if not Assigned(Favorites1) then Exit;
+  if not Assigned(AddtoFavoritesMenuItem) then Exit;
   if ListView1.ItemIndex < 0 then
   begin
-    Favorites1.Visible := False;
+    AddtoFavoritesMenuItem.Visible := False;
     Exit;
   end;
 
   RealIndex := FFilteredIndices[ListView1.ItemIndex];
 
   if IsFavorite(FGameData[RealIndex].ID) then
-    Favorites1.Caption := 'Remove from Favorites'
+    AddtoFavoritesMenuItem.Caption := 'Remove from Favorites'
   else
-    Favorites1.Caption := 'Add to Favorites';
+    AddtoFavoritesMenuItem.Caption := 'Add to Favorites';
 
-  Favorites1.Visible := True;
+  AddtoFavoritesMenuItem.Visible := True;
 end;
 
 // Загружает набор ID избранных игр из FConfig в память (один раз при старте).
@@ -3493,6 +3526,347 @@ begin
   finally
     TorrentParts.Free;
   end;
+end;
+
+procedure TSGLMainFormHelper.RequestHoverImage(RealIndex: Integer);
+var
+  GameID: string;
+begin
+  if (RealIndex < 0) or (RealIndex >= Length(FGameData)) then Exit;
+
+  GameID := FGameData[RealIndex].ID;
+  if GameID = '' then
+    GameID := '#' + IntToStr(RealIndex);
+
+  FHoverLock.Enter;
+  try
+    if GameID = FHoverQueuedID then Exit;
+    FHoverQueuedID     := GameID;
+    FHoverPendingIndex := RealIndex;
+    FHoverEvent.SetEvent;
+  finally
+    FHoverLock.Leave;
+  end;
+end;
+
+function TSGLMainFormHelper.GetHoverQueuedID: string;
+begin
+  FHoverLock.Enter;
+  try
+    Result := FHoverQueuedID;
+  finally
+    FHoverLock.Leave;
+  end;
+end;
+
+procedure TSGLMainFormHelper.StartHoverLoadThread;
+begin
+  FHoverLoadThread := TThread.CreateAnonymousThread(HoverLoadThreadProc);
+  FHoverLoadThread.FreeOnTerminate := False;
+  FHoverLoadThread.Start;
+end;
+
+procedure TSGLMainFormHelper.HoverLoadThreadProc;
+var
+  RealIndex: Integer;
+begin
+  CoInitializeEx(nil, COINIT_MULTITHREADED);
+  try
+    while not (TThread.CurrentThread.CheckTerminated or FClosing) do
+    begin
+      if FHoverEvent.WaitFor(200) <> wrSignaled then Continue;
+      if TThread.CurrentThread.CheckTerminated or FClosing then Break;
+
+      // Берём самый свежий запрос; если во время ProcessHoverRequest
+      // придёт новый — цикл сразу подхватит его без лишнего ожидания
+      repeat
+        RealIndex := -1;
+        FHoverLock.Enter;
+        try
+          RealIndex := FHoverPendingIndex;
+          FHoverPendingIndex := -1;
+          FHoverEvent.ResetEvent;
+        finally
+          FHoverLock.Leave;
+        end;
+
+        if RealIndex >= 0 then
+          ProcessHoverRequest(RealIndex);
+      until (FHoverPendingIndex < 0) or
+            TThread.CurrentThread.CheckTerminated or FClosing;
+    end;
+  finally
+    CoUninitialize;
+  end;
+end;
+
+procedure TSGLMainFormHelper.ProcessHoverRequest(RealIndex: Integer);
+var
+  LocalPlatform, LocalGameName, LocalReleaseDate, LocalID, LocalForceName: string;
+  LocalImgList: TStringList;
+  FoundPath: string;
+  Bmp: TBitmap;
+begin
+  if FClosing then Exit;
+  if (RealIndex < 0) or (RealIndex >= Length(FGameData)) then Exit;
+
+  LocalPlatform    := FGameData[RealIndex].Platforms;
+  LocalGameName    := FGameData[RealIndex].GameName;
+  LocalReleaseDate := IntToStr(FGameData[RealIndex].ReleaseYear);
+  LocalID := FGameData[RealIndex].ID;
+  if LocalID = '' then
+    LocalID := '#' + IntToStr(RealIndex);
+
+  if LocalID <> GetHoverQueuedID then Exit;
+
+  LocalForceName := '';
+  if (FGameData[RealIndex].ID <> '') and Assigned(NConfig) and
+     NConfig.ValueExists(LocalPlatform, FGameData[RealIndex].ID) then
+    LocalForceName := Trim(NConfig.ReadString(LocalPlatform, FGameData[RealIndex].ID, ''));
+
+  FoundPath := '';
+  FHoverLock.Enter;
+  try
+    FHoverPathCache.TryGetValue(LocalID, FoundPath);
+  finally
+    FHoverLock.Leave;
+  end;
+
+  if FoundPath = '' then
+  begin
+    LocalImgList := TStringList.Create;
+    try
+      LocalImgList.Duplicates := dupIgnore;
+      LocalImgList.CaseSensitive := False;
+      FindGameImages(LocalPlatform, LocalGameName, LocalReleaseDate,
+                     FGameData[RealIndex].ID, LocalForceName, LocalImgList);
+      if LocalImgList.Count > 0 then
+        FoundPath := LocalImgList[0];
+    finally
+      LocalImgList.Free;
+    end;
+
+    // Кэшируем сразу, даже если запрос уже устарел — повторный hover
+    // по этому элементу не будет пересканировать диск
+    if FoundPath = '' then
+    begin
+      FHoverLock.Enter;
+      try
+        FHoverNotFoundCache.AddOrSetValue(LocalID, Now);
+      finally
+        FHoverLock.Leave;
+      end;
+    end
+    else
+    begin
+      // Если нашлось – удаляем из отрицательного кэша (на случай, если оно там было)
+      FHoverLock.Enter;
+      try
+        FHoverNotFoundCache.Remove(LocalID);
+        FHoverPathCache.AddOrSetValue(LocalID, FoundPath);
+      finally
+        FHoverLock.Leave;
+      end;
+    end;
+  end
+  else
+  begin
+    // Если уже было в кэше (положительный) – ничего не делаем
+  end;
+
+  if TThread.CurrentThread.CheckTerminated or FClosing then Exit;
+  if LocalID <> GetHoverQueuedID then Exit;
+
+  Bmp := nil;
+  if FoundPath <> '' then
+    try
+      Bmp := LoadScaledHoverBitmap(FoundPath);
+    except
+      Bmp := nil;
+    end;
+
+  if (LocalID <> FHoverQueuedID) or TThread.CurrentThread.CheckTerminated or FClosing then
+  begin
+    if Assigned(Bmp) then Bmp.Free;
+    Exit;
+  end;
+
+  TThread.Queue(nil,
+    procedure
+    begin
+      if FClosing or (csDestroying in ComponentState) then
+      begin
+        if Assigned(Bmp) then Bmp.Free;
+        Exit;
+      end;
+
+      if LocalID <> FHoverQueuedID then
+      begin
+        if Assigned(Bmp) then Bmp.Free;
+        Exit;
+      end;
+
+      if Assigned(Bmp) and (Bmp.Width > 0) then
+      begin
+        FHoverBitmapID := LocalID;
+        FHoverBitmap.Assign(Bmp);
+        Bmp.Free;
+      end
+      else
+      begin
+        // Пустой результат НЕ кэшируем — следующий paint сможет запросить снова
+        if Assigned(Bmp) then Bmp.Free;
+        if FHoverBitmapID = LocalID then
+        begin
+          FHoverBitmapID := '';
+          FHoverBitmap.SetSize(0, 0);
+        end;
+      end;
+
+      // Запрос больше не «в работе»
+      if FHoverQueuedID = LocalID then
+        FHoverQueuedID := '';
+
+      ListView1.Invalidate;
+    end);
+end;
+
+function TSGLMainFormHelper.LoadScaledHoverBitmapWIC(const FilePath: string): TBitmap;
+var
+  WIC: TWICImage;
+  MaxSide, SrcW, SrcH, DstW, DstH: Integer;
+  Scale: Double;
+begin
+  Result := nil;
+
+  WIC := TWICImage.Create;
+  try
+    try
+      WIC.LoadFromFile(FilePath);
+    except
+      Exit;
+    end;
+    if WIC.Empty or (WIC.Width <= 0) or (WIC.Height <= 0) then Exit;
+
+    // Ограничиваем размер превью размером плитки
+    MaxSide := 0;
+    if Assigned(FListItemHeightImages) then
+      MaxSide := Max(FListItemHeightImages.Width, FListItemHeightImages.Height);
+    if MaxSide < 80 then
+      MaxSide := 256;
+    MaxSide := MaxSide + 16;
+
+    SrcW := WIC.Width;
+    SrcH := WIC.Height;
+
+    if (SrcW <= MaxSide) and (SrcH <= MaxSide) then
+    begin
+      DstW := SrcW;
+      DstH := SrcH;
+    end
+    else
+    begin
+      Scale := Min(MaxSide / SrcW, MaxSide / SrcH);
+      DstW := Max(1, Round(SrcW * Scale));
+      DstH := Max(1, Round(SrcH * Scale));
+    end;
+
+    Result := TBitmap.Create;
+    Result.PixelFormat := pf32bit;
+    Result.SetSize(DstW, DstH);
+
+    SetStretchBltMode(Result.Canvas.Handle, HALFTONE);
+    SetBrushOrgEx(Result.Canvas.Handle, 0, 0, nil);
+    Result.Canvas.StretchDraw(Rect(0, 0, DstW, DstH), WIC);
+  finally
+    WIC.Free;
+  end;
+end;
+
+function TSGLMainFormHelper.LoadScaledHoverBitmap(const FilePath: string): TBitmap;
+var
+  Pic: TGraphic;
+  Ext: string;
+  MaxSide, SrcW, SrcH, DstW, DstH: Integer;
+  Scale: Double;
+begin
+  Result := nil;
+  if not TFile.Exists(FilePath) then Exit;
+
+  Ext := LowerCase(ExtractFileExt(FilePath));
+  if (Ext = '.jpg') or (Ext = '.jpeg') then
+    Pic := TJPEGImage.Create
+  else if Ext = '.png' then
+    Pic := TPngImage.Create
+  else if Ext = '.gif' then
+    Pic := TGIFImage.Create
+  else if Ext = '.bmp' then
+    Pic := Vcl.Graphics.TBitmap.Create
+  else
+  begin
+    Result := LoadScaledHoverBitmapWIC(FilePath);
+    Exit;
+  end;
+
+  try
+    try
+      Pic.LoadFromFile(FilePath);
+    except
+      Result := LoadScaledHoverBitmapWIC(FilePath);
+      Exit;
+    end;
+
+    if (Pic.Width <= 0) or (Pic.Height <= 0) then Exit;
+
+    MaxSide := 0;
+    if Assigned(FListItemHeightImages) then
+      MaxSide := Max(FListItemHeightImages.Width, FListItemHeightImages.Height);
+    if MaxSide < 80 then
+      MaxSide := 256;
+    MaxSide := MaxSide + 16;
+
+    SrcW := Pic.Width;
+    SrcH := Pic.Height;
+
+    if (SrcW <= MaxSide) and (SrcH <= MaxSide) then
+    begin
+      DstW := SrcW;
+      DstH := SrcH;
+    end
+    else
+    begin
+      Scale := Min(MaxSide / SrcW, MaxSide / SrcH);
+      DstW := Max(1, Round(SrcW * Scale));
+      DstH := Max(1, Round(SrcH * Scale));
+    end;
+
+    Result := TBitmap.Create;
+    try
+      Result.PixelFormat := pf32bit;
+      Result.SetSize(DstW, DstH);
+      SetStretchBltMode(Result.Canvas.Handle, HALFTONE);
+      SetBrushOrgEx(Result.Canvas.Handle, 0, 0, nil);
+      Result.Canvas.StretchDraw(Rect(0, 0, DstW, DstH), Pic);
+    except
+      Result.Free;
+      Result := nil;
+    end;
+  finally
+    Pic.Free;
+  end;
+end;
+
+procedure TSGLMainFormHelper.HoverDwellTimerTimer(Sender: TObject);
+begin
+  FHoverDwellTimer.Enabled := False;
+  if FHoverDwellIndex < 0 then Exit;
+
+  RequestHoverImage(FHoverDwellIndex);
+
+  // Снимаем защёлку сразу — если запрос не долетит (гонка/устареет),
+  // следующий repaint сможет переармировать таймер и повторить попытку
+  FHoverDwellID    := '';
+  FHoverDwellIndex := -1;
 end;
 
 end.

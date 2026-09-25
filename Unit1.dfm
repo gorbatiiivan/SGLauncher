@@ -75,10 +75,8 @@ object SGLMainForm: TSGLMainForm
           Proportional = True
           Stretch = True
           OnClick = ScreenShotImageClick
-          ExplicitLeft = 14
-          ExplicitTop = 0
-          ExplicitWidth = 388
-          ExplicitHeight = 226
+          ExplicitLeft = 100
+          ExplicitTop = 19
         end
         object NextImgBtn: TSpeedButton
           Left = 562
@@ -356,7 +354,6 @@ object SGLMainForm: TSGLMainForm
           end
           item
           end>
-        DoubleBuffered = False
         Font.Charset = DEFAULT_CHARSET
         Font.Color = clWindowText
         Font.Height = -15
@@ -366,17 +363,18 @@ object SGLMainForm: TSGLMainForm
         OwnerData = True
         ReadOnly = True
         RowSelect = True
-        ParentDoubleBuffered = False
         ParentFont = False
-        PopupMenu = PopupMenu1
+        PopupMenu = ListViewPopupActionBar
         ShowColumnHeaders = False
         TabOrder = 2
         ViewStyle = vsReport
+        OnAdvancedCustomDrawItem = ListView1AdvancedCustomDrawItem
         OnContextPopup = ListView1ContextPopup
         OnData = ListView1Data
         OnDblClick = ListView1DblClick
         OnKeyDown = ListView1KeyDown
         OnKeyPress = ListView1KeyPress
+        OnMouseLeave = ListView1MouseLeave
         OnSelectItem = ListView1SelectItem
       end
       object Panel4: TPanel
@@ -469,181 +467,206 @@ object SGLMainForm: TSGLMainForm
     TabOrder = 1
     OnClick = ToolBar1Click
   end
-  object PopupMenu1: TPopupMenu
-    Left = 345
-    Top = 22
-    object Run1: TMenuItem
-      Caption = 'Run'
-      Default = True
-      ShortCut = 13
-      OnClick = Run1Click
-    end
-    object Configuration1: TMenuItem
-      Caption = 'Configuration'
-      OnClick = Configuration1Click
-    end
-    object N9: TMenuItem
-      Caption = '-'
-    end
-    object Download1: TMenuItem
-      Caption = 'Download archive'
-      OnClick = Download1Click
-    end
-    object DeleteZIP1: TMenuItem
-      Caption = 'Delete archive'
-      OnClick = DeleteZIP1Click
-    end
-    object N1: TMenuItem
-      Caption = '-'
-    end
-    object Favorites1: TMenuItem
-      Caption = 'Add to Favorites'
-      OnClick = Favorites1Click
-    end
-    object N8: TMenuItem
-      Caption = '-'
-    end
-    object Manual1: TMenuItem
-      Caption = 'Manual'
-      Enabled = False
-      OnClick = Manual1Click
-    end
-    object N2: TMenuItem
-      Caption = '-'
-    end
-    object DesktopShortcut1: TMenuItem
-      Caption = 'Create desktop shortcut'
-      OnClick = DesktopShortcut1Click
-    end
-    object N7: TMenuItem
-      Caption = '-'
-    end
-    object Customimagename1: TMenuItem
-      Caption = 'Custom image name'
-      OnClick = Customimagename1Click
-    end
-    object sepDynamicStart: TMenuItem
-      Caption = '-'
-    end
-  end
   object TrayIcon: TTrayIcon
-    PopupMenu = TrayMenu
+    PopupMenu = TrayPopupActionBar
     OnClick = TrayIconClick
-    Left = 417
+    Left = 489
     Top = 22
-  end
-  object TrayMenu: TPopupMenu
-    Left = 479
-    Top = 20
-    object Show1: TMenuItem
-      Caption = 'Show'
-      Default = True
-      OnClick = TrayIconClick
-    end
-    object N3: TMenuItem
-      Caption = '-'
-    end
-    object Options1: TMenuItem
-      Caption = 'Options'
-      object About1: TMenuItem
-        Caption = 'About'
-        ShortCut = 112
-        OnClick = About1Click
-      end
-      object N6: TMenuItem
-        Caption = '-'
-      end
-      object Autostart1: TMenuItem
-        Caption = 'Autostart'
-        OnClick = Autostart1Click
-      end
-      object Hideonstartup1: TMenuItem
-        Caption = 'Hide on startup'
-        OnClick = Hideonstartup1Click
-      end
-      object Enabledimagegallery1: TMenuItem
-        Caption = 'Enabled image gallery'
-        OnClick = Enabledimagegallery1Click
-      end
-      object Multilinetabs1: TMenuItem
-        Caption = 'Multi line tabs'
-        OnClick = Multilinetabs1Click
-      end
-      object StyleMenu1: TMenuItem
-        Caption = 'Style'
-      end
-      object ToolBarMenu1: TMenuItem
-        Caption = 'ToolBar'
-        object ShowToolBar: TMenuItem
-          Caption = 'Show'
-          OnClick = ShowToolBarClick
-        end
-        object AlignToolBar1: TMenuItem
-          Caption = 'Align to'
-          object ToolBarTop1: TMenuItem
-            Caption = 'Top'
-            Hint = 'alTop'
-            OnClick = ToolBarTop1Click
-          end
-          object ToolBarBottom1: TMenuItem
-            Caption = 'Bottom'
-            Hint = 'alBottom'
-            OnClick = ToolBarTop1Click
-          end
-          object ToolBarLeft1: TMenuItem
-            Caption = 'Left'
-            Hint = 'alLeft'
-            OnClick = ToolBarTop1Click
-          end
-          object ToolBarRight1: TMenuItem
-            Caption = 'Right'
-            Hint = 'alRight'
-            OnClick = ToolBarTop1Click
-          end
-        end
-      end
-      object Core1: TMenuItem
-        Caption = 'Core'
-        object UseBinaryCache1: TMenuItem
-          Caption = 'Use Binary Cache'
-          OnClick = UseBinaryCache1Click
-        end
-        object EmptyWorkingSet1: TMenuItem
-          Caption = 'EmptyWorkingSet'
-          OnClick = EmptyWorkingSet1Click
-        end
-      end
-      object N5: TMenuItem
-        Caption = '-'
-      end
-      object Specifyfolders1: TMenuItem
-        Caption = 'Specify folders'
-        OnClick = Specifyfolders1Click
-      end
-      object Specifylanguagefolders1: TMenuItem
-        Caption = 'Specify language folders'
-        OnClick = Specifylanguagefolders1Click
-      end
-    end
-    object N4: TMenuItem
-      Caption = '-'
-    end
-    object Exit1: TMenuItem
-      Caption = 'Exit'
-      OnClick = Exit1Click
-    end
   end
   object ImageList1: TImageList
     ColorDepth = cd32Bit
     DrawingStyle = dsTransparent
     Height = 32
     Width = 32
-    Left = 544
+    Left = 680
     Top = 24
   end
-  object pmPlatformFilter: TPopupMenu
-    OnPopup = pmPlatformFilterPopup
-    Left = 592
+  object TrayPopupActionBar: TPopupActionBar
+    Left = 584
     Top = 24
+    object ShowMenuItem: TMenuItem
+      Caption = 'Show'
+      Default = True
+      OnClick = TrayIconClick
+    end
+    object N11: TMenuItem
+      Caption = '-'
+    end
+    object Options2: TMenuItem
+      Caption = 'Options'
+      object AboutMenuItem: TMenuItem
+        Caption = 'About'
+        ShortCut = 112
+        OnClick = AboutMenuItemClick
+      end
+      object N14: TMenuItem
+        Caption = '-'
+      end
+      object AutostartMenuItem: TMenuItem
+        Caption = 'Autostart'
+        OnClick = AutostartMenuItemClick
+      end
+      object HideonstartupMenuItem: TMenuItem
+        Caption = 'Hide on startup'
+        OnClick = HideonstartupMenuItemClick
+      end
+      object MultilinetabsMenuItem: TMenuItem
+        Caption = 'Multi line tabs'
+        OnClick = MultilinetabsMenuItemClick
+      end
+      object ListView2: TMenuItem
+        Caption = 'List View'
+        object ViewasThumbnailsMenuItem: TMenuItem
+          Caption = 'View as Thumbnails'
+          OnClick = ViewasThumbnailsMenuItemClick
+        end
+        object ViewasListMenuItem: TMenuItem
+          Caption = 'View as List'
+          OnClick = ViewasListMenuItemClick
+        end
+        object N13: TMenuItem
+          Caption = '-'
+        end
+        object ShowImageonHoverMenuItem: TMenuItem
+          Caption = 'Show Image on Hover'
+          OnClick = ShowImageonHoverMenuItemClick
+        end
+      end
+      object GameDetails2: TMenuItem
+        Caption = 'Game Details'
+        object ShowGameDetailsMenuItem: TMenuItem
+          Caption = 'Show Game Details'
+          OnClick = ShowGameDetailsMenuItemClick
+        end
+        object EnabledimagegalleryMenuItem: TMenuItem
+          Caption = 'Enabled image gallery'
+          OnClick = EnabledimagegalleryMenuItemClick
+        end
+      end
+      object StyleMenuItem: TMenuItem
+        Caption = 'Style'
+      end
+      object oolBar1: TMenuItem
+        Caption = 'ToolBar'
+        object ToolBarShowMenuItem: TMenuItem
+          Caption = 'Show'
+          OnClick = ToolBarShowMenuItemClick
+        end
+        object ToolBarAlignMenuItem: TMenuItem
+          Caption = 'Align to'
+          object ToolBarTopMenuItem: TMenuItem
+            Caption = 'Top'
+            Hint = 'alTop'
+            OnClick = ToolBarTop1Click
+          end
+          object ToolBarBottomMenuItem: TMenuItem
+            Caption = 'Bottom'
+            Hint = 'alBottom'
+            OnClick = ToolBarTop1Click
+          end
+          object ToolBarLeftMenuItem: TMenuItem
+            Caption = 'Left'
+            Hint = 'alLeft'
+            OnClick = ToolBarTop1Click
+          end
+          object ToolBarRightMenuItem: TMenuItem
+            Caption = 'Right'
+            Hint = 'alRight'
+            OnClick = ToolBarTop1Click
+          end
+        end
+      end
+      object Core2: TMenuItem
+        Caption = 'Core'
+        object UseBinaryCacheMenuItem: TMenuItem
+          Caption = 'Use Binary Cache'
+          OnClick = UseBinaryCacheMenuItemClick
+        end
+        object EmptyWorkingSetMenuItem: TMenuItem
+          Caption = 'EmptyWorkingSet'
+          OnClick = EmptyWorkingSetMenuItemClick
+        end
+      end
+      object N12: TMenuItem
+        Caption = '-'
+      end
+      object SpecifyfoldersMenuItem: TMenuItem
+        Caption = 'Specify folders'
+        OnClick = SpecifyfoldersMenuItemClick
+      end
+      object SpecifylanguagefoldersMenuItem: TMenuItem
+        Caption = 'Specify language folders'
+        OnClick = SpecifylanguagefoldersMenuItemClick
+      end
+    end
+    object N15: TMenuItem
+      Caption = '-'
+    end
+    object ExitMenuItem: TMenuItem
+      Caption = 'Exit'
+      OnClick = ExitMenuItemClick
+    end
+  end
+  object ListViewPopupActionBar: TPopupActionBar
+    Left = 384
+    Top = 24
+    object RunMenuItem: TMenuItem
+      Caption = 'Run'
+      Default = True
+      ShortCut = 13
+      OnClick = RunMenuItemClick
+    end
+    object ConfigurationMenuItem: TMenuItem
+      Caption = 'Configuration'
+      OnClick = ConfigurationMenuItemClick
+    end
+    object N3: TMenuItem
+      Caption = '-'
+    end
+    object DownloadarchiveMenuItem: TMenuItem
+      Caption = 'Download archive'
+      OnClick = DownloadarchiveMenuItemClick
+    end
+    object DeletearchiveMenuItem: TMenuItem
+      Caption = 'Delete archive'
+      OnClick = DeletearchiveMenuItemClick
+    end
+    object N4: TMenuItem
+      Caption = '-'
+    end
+    object AddtoFavoritesMenuItem: TMenuItem
+      Caption = 'Add to Favorites'
+      OnClick = AddtoFavoritesMenuItemClick
+    end
+    object N5: TMenuItem
+      Caption = '-'
+    end
+    object ManualMenuItem: TMenuItem
+      Caption = 'Manual'
+      Enabled = False
+      OnClick = ManualMenuItemClick
+    end
+    object N6: TMenuItem
+      Caption = '-'
+    end
+    object CreatedesktopshortcutMenuItem: TMenuItem
+      Caption = 'Create desktop shortcut'
+      OnClick = CreatedesktopshortcutMenuItemClick
+    end
+    object N10: TMenuItem
+      Caption = '-'
+    end
+    object CustomimagenameMenuItem: TMenuItem
+      Caption = 'Custom image name'
+      OnClick = CustomimagenameMenuItemClick
+    end
+    object sepDynamicStart: TMenuItem
+      Caption = '-'
+    end
+  end
+  object pmPlatformFilter: TPopupActionBar
+    OnPopup = PopupActionBar1Popup
+    Left = 769
+    Top = 26
   end
 end

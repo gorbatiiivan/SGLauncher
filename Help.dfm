@@ -82,7 +82,7 @@ object HelpForm: THelpForm
         Cursor = crHandPoint
         Hint = 'https://sglauncher.sourceforge.io/'
         AutoSize = False
-        Caption = 'SGLauncher on the SourceForge.net'
+        Caption = 'SGLauncher on the SourceForge'
         Font.Charset = DEFAULT_CHARSET
         Font.Color = clBlue
         Font.Height = -11
@@ -95,13 +95,30 @@ object HelpForm: THelpForm
         Left = 368
         Top = 248
         Width = 241
-        Height = 71
+        Height = 49
         AutoSize = False
         Caption = 
           'Copyright '#169' 2026 G. Ivan'#13#10'This application is distributed withou' +
           't any warranties.'
         Layout = tlBottom
         WordWrap = True
+      end
+      object Label4: TLabel
+        Left = 368
+        Top = 306
+        Width = 185
+        Height = 13
+        Cursor = crHandPoint
+        Hint = 'https://github.com/gorbatiiivan/SGLauncher'
+        AutoSize = False
+        Caption = 'SGLauncher on the GitHub'
+        Font.Charset = DEFAULT_CHARSET
+        Font.Color = clBlue
+        Font.Height = -11
+        Font.Name = 'Segoe UI'
+        Font.Style = [fsUnderline]
+        ParentFont = False
+        OnClick = Label5Click
       end
     end
     object TabSheet4: TTabSheet
@@ -215,14 +232,17 @@ object HelpForm: THelpForm
             ' The "torrents" folder is not required when using the full versi' +
             'ons of eXo projects. '
           ' Download and unpack "torrents.zip" and restart the launcher'
+          ''
           
             '// -------------------------------------------------------------' +
             '------Keyboard shortcuts----------------------------------------' +
             '----------------'
           ''
           
-            'F5 - Automatically rebuild the binary cache (requires "Use Binar' +
-            'y Cache" to be enabled in the tray menu).')
+            'F5          = Automatically rebuild the binary cache (requires "' +
+            'Use Binary Cache" to be enabled in the tray menu).'
+          'Ctrl + + = Increase the ListView thumbnails size'
+          'Ctrl + -  = Decrease the ListView thumbnails size')
         ReadOnly = True
         TabOrder = 0
       end

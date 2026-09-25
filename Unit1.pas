@@ -7,11 +7,12 @@ uses
   System.IOUtils, Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.ComCtrls,
   Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.Buttons, Vcl.Imaging.jpeg, Vcl.Imaging.pngimage,
   Vcl.Imaging.GIFImg, ShellAPI, System.ImageList, Vcl.ImgList, Vcl.ToolWin,
-  IniFiles, Vcl.Menus, ShlObj, StrUtils, System.Generics.Collections,Vcl.Themes,
-  System.TypInfo, SyncObjs;
+  IniFiles, ShlObj, StrUtils, System.Generics.Collections,Vcl.Themes,
+  System.TypInfo, SyncObjs, Math, Winapi.CommCtrl, System.DateUtils,
+  Vcl.ActnPopup, Vcl.PlatformDefaultStyleActnCtrls, Vcl.Menus;
 
 const
-  sReleaseDate = '25.08.2026';
+  sReleaseDate = '25.09.2026';
   //Бинарный кэш для игр
   CACHE_VERSION: Word = 1;
 
@@ -46,11 +47,6 @@ type
     ListView1: TListView;
     Panel4: TPanel;
     ComboBox1: TComboBox;
-    PopupMenu1: TPopupMenu;
-    Run1: TMenuItem;
-    Configuration1: TMenuItem;
-    N1: TMenuItem;
-    Manual1: TMenuItem;
     TrayIcon: TTrayIcon;
     NextImgBtn: TSpeedButton;
     ScrollBox1: TScrollBox;
@@ -64,54 +60,66 @@ type
     PlatformLabel: TLabel;
     ReleaseLabel: TLabel;
     PrevImgBtn: TSpeedButton;
-    N2: TMenuItem;
-    Customimagename1: TMenuItem;
-    TrayMenu: TPopupMenu;
-    Hideonstartup1: TMenuItem;
-    N3: TMenuItem;
-    Exit1: TMenuItem;
-    Options1: TMenuItem;
-    N4: TMenuItem;
-    Show1: TMenuItem;
     Splitter1: TSplitter;
     Splitter2: TSplitter;
-    N5: TMenuItem;
-    Specifyfolders1: TMenuItem;
-    About1: TMenuItem;
-    N6: TMenuItem;
-    N7: TMenuItem;
-    DesktopShortcut1: TMenuItem;
     ToolBar1: TToolBar;
     ImageList1: TImageList;
-    ShowToolBar: TMenuItem;
-    ToolBarMenu1: TMenuItem;
-    AlignToolBar1: TMenuItem;
-    ToolBarLeft1: TMenuItem;
-    ToolBarBottom1: TMenuItem;
-    ToolBarTop1: TMenuItem;
-    ToolBarRight1: TMenuItem;
-    StyleMenu1: TMenuItem;
-    Autostart1: TMenuItem;
-    Specifylanguagefolders1: TMenuItem;
-    EmptyWorkingSet1: TMenuItem;
     ScrollBox2: TScrollBox;
     FlowPanel1: TFlowPanel;
-    Enabledimagegallery1: TMenuItem;
     PlayModeLabel: TLabel;
     Splitter3: TSplitter;
     Edit1: TEdit;
     ComboBox2: TComboBox;
-    Multilinetabs1: TMenuItem;
-    UseBinaryCache1: TMenuItem;
-    Core1: TMenuItem;
-    pmPlatformFilter: TPopupMenu;
     PlatformBtn: TButton;
-    Favorites1: TMenuItem;
-    N8: TMenuItem;
-    Download1: TMenuItem;
-    DeleteZIP1: TMenuItem;
-    N9: TMenuItem;
+    TrayPopupActionBar: TPopupActionBar;
+    ShowMenuItem: TMenuItem;
+    N11: TMenuItem;
+    Options2: TMenuItem;
+    SpecifylanguagefoldersMenuItem: TMenuItem;
+    SpecifyfoldersMenuItem: TMenuItem;
+    N12: TMenuItem;
+    Core2: TMenuItem;
+    EmptyWorkingSetMenuItem: TMenuItem;
+    UseBinaryCacheMenuItem: TMenuItem;
+    oolBar1: TMenuItem;
+    ToolBarAlignMenuItem: TMenuItem;
+    ToolBarRightMenuItem: TMenuItem;
+    ToolBarLeftMenuItem: TMenuItem;
+    ToolBarBottomMenuItem: TMenuItem;
+    ToolBarTopMenuItem: TMenuItem;
+    ToolBarShowMenuItem: TMenuItem;
+    StyleMenuItem: TMenuItem;
+    GameDetails2: TMenuItem;
+    EnabledimagegalleryMenuItem: TMenuItem;
+    ShowGameDetailsMenuItem: TMenuItem;
+    ListView2: TMenuItem;
+    ShowImageonHoverMenuItem: TMenuItem;
+    N13: TMenuItem;
+    ViewasListMenuItem: TMenuItem;
+    ViewasThumbnailsMenuItem: TMenuItem;
+    MultilinetabsMenuItem: TMenuItem;
+    HideonstartupMenuItem: TMenuItem;
+    AutostartMenuItem: TMenuItem;
+    N14: TMenuItem;
+    AboutMenuItem: TMenuItem;
+    N15: TMenuItem;
+    ExitMenuItem: TMenuItem;
+    ListViewPopupActionBar: TPopupActionBar;
+    RunMenuItem: TMenuItem;
+    ConfigurationMenuItem: TMenuItem;
+    N3: TMenuItem;
+    DownloadarchiveMenuItem: TMenuItem;
+    DeletearchiveMenuItem: TMenuItem;
+    N4: TMenuItem;
+    AddtoFavoritesMenuItem: TMenuItem;
+    N5: TMenuItem;
+    ManualMenuItem: TMenuItem;
+    N6: TMenuItem;
+    CreatedesktopshortcutMenuItem: TMenuItem;
+    N10: TMenuItem;
+    CustomimagenameMenuItem: TMenuItem;
     sepDynamicStart: TMenuItem;
+    pmPlatformFilter: TPopupActionBar;
     procedure FormResize(Sender: TObject);
     procedure ListView1Data(Sender: TObject; Item: TListItem);
     procedure ListView1SelectItem(Sender: TObject; Item: TListItem; Selected: Boolean);
@@ -122,43 +130,51 @@ type
     procedure FormCreate(Sender: TObject);
     procedure ScreenShotImageClick(Sender: TObject);
     procedure ListView1DblClick(Sender: TObject);
-    procedure Run1Click(Sender: TObject);
-    procedure Configuration1Click(Sender: TObject);
-    procedure Manual1Click(Sender: TObject);
     procedure TrayIconClick(Sender: TObject);
     procedure ListView1KeyPress(Sender: TObject; var Key: Char);
     procedure ListView1ContextPopup(Sender: TObject; MousePos: TPoint;
       var Handled: Boolean);
     procedure NextImgBtnClick(Sender: TObject);
     procedure PrevImgBtnClick(Sender: TObject);
-    procedure Customimagename1Click(Sender: TObject);
-    procedure Exit1Click(Sender: TObject);
-    procedure Hideonstartup1Click(Sender: TObject);
     procedure FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
-    procedure Specifyfolders1Click(Sender: TObject);
     procedure ListView1KeyDown(Sender: TObject; var Key: Word;
       Shift: TShiftState);
-    procedure About1Click(Sender: TObject);
-    procedure DesktopShortcut1Click(Sender: TObject);
     procedure ToolBar1Click(Sender: TObject);
-    procedure ShowToolBarClick(Sender: TObject);
     procedure ToolBarTop1Click(Sender: TObject);
-    procedure Autostart1Click(Sender: TObject);
-    procedure Specifylanguagefolders1Click(Sender: TObject);
-    procedure EmptyWorkingSet1Click(Sender: TObject);
-    procedure Enabledimagegallery1Click(Sender: TObject);
     procedure Splitter3Moved(Sender: TObject);
     procedure ComboBox2Change(Sender: TObject);
     procedure DeveloperLabelMouseEnter(Sender: TObject);
     procedure DeveloperLabelMouseLeave(Sender: TObject);
     procedure DeveloperLabelClick(Sender: TObject);
-    procedure Multilinetabs1Click(Sender: TObject);
-    procedure UseBinaryCache1Click(Sender: TObject);
-    procedure pmPlatformFilterPopup(Sender: TObject);
     procedure PlatformBtnClick(Sender: TObject);
-    procedure Favorites1Click(Sender: TObject);
-    procedure Download1Click(Sender: TObject);
-    procedure DeleteZIP1Click(Sender: TObject);
+    procedure ListView1AdvancedCustomDrawItem(Sender: TCustomListView;
+      Item: TListItem; State: TCustomDrawState; Stage: TCustomDrawStage;
+      var DefaultDraw: Boolean);
+    procedure ListView1MouseLeave(Sender: TObject);
+    procedure ExitMenuItemClick(Sender: TObject);
+    procedure AboutMenuItemClick(Sender: TObject);
+    procedure AutostartMenuItemClick(Sender: TObject);
+    procedure HideonstartupMenuItemClick(Sender: TObject);
+    procedure MultilinetabsMenuItemClick(Sender: TObject);
+    procedure ViewasThumbnailsMenuItemClick(Sender: TObject);
+    procedure ViewasListMenuItemClick(Sender: TObject);
+    procedure ShowImageonHoverMenuItemClick(Sender: TObject);
+    procedure ShowGameDetailsMenuItemClick(Sender: TObject);
+    procedure EnabledimagegalleryMenuItemClick(Sender: TObject);
+    procedure ToolBarShowMenuItemClick(Sender: TObject);
+    procedure UseBinaryCacheMenuItemClick(Sender: TObject);
+    procedure EmptyWorkingSetMenuItemClick(Sender: TObject);
+    procedure SpecifyfoldersMenuItemClick(Sender: TObject);
+    procedure SpecifylanguagefoldersMenuItemClick(Sender: TObject);
+    procedure RunMenuItemClick(Sender: TObject);
+    procedure ConfigurationMenuItemClick(Sender: TObject);
+    procedure DownloadarchiveMenuItemClick(Sender: TObject);
+    procedure DeletearchiveMenuItemClick(Sender: TObject);
+    procedure AddtoFavoritesMenuItemClick(Sender: TObject);
+    procedure ManualMenuItemClick(Sender: TObject);
+    procedure CreatedesktopshortcutMenuItemClick(Sender: TObject);
+    procedure CustomimagenameMenuItemClick(Sender: TObject);
+    procedure PopupActionBar1Popup(Sender: TObject);
   protected
     NConfig: TMemIniFile;
     FClosing: Boolean;
@@ -230,6 +246,25 @@ type
     FSelectedPlatformsFavorites: TStringList;
     FPlatformFilterActiveFavorites: Boolean;
     FFavoriteIDs: TDictionary<string, Boolean>; // Кэш ID избранных игр в памяти
+    // ListView imagelist thumbnails
+    FListItemHeightImages: TImageList;
+    // Превью скриншота при наведении (Hot) на плитку ListView
+    FHoverBitmap:       TBitmap;          // текущая превью-картинка (переиспользуется)
+    FHoverBitmapID:     string;           // ID игры, чья картинка сейчас в FHoverBitmap
+    FHoverQueuedID:     string;           // ID игры, которую сейчас декодирует поток ('' = нет)
+    FHoverLock:         TCriticalSection; // защита FHoverPendingIndex/FHoverQueuedID
+    FHoverEvent:        TEvent;           // сигнал потоку "появился новый запрос"
+    FHoverPendingIndex: Integer;          // RealIndex к обработке (-1 = нет), затирается новым hover
+    FHoverLoadThread:   TThread;
+    FShowImageOnHover: Boolean;           // Показываем изображение по курсору
+    // Debounce + кэш путей для превью по наведению
+    FHoverDwellTimer:  TTimer;            // старт поиска картинки только после задержки курсора
+    FHoverDwellID:     string;            // ID элемента, ожидающего срабатывания таймера
+    FHoverDwellIndex:  Integer;           // RealIndex элемента, ожидающего срабатывания таймера
+    FHoverPathCache:   TDictionary<string, string>; // GameID -> найденный путь (не сбрасывается при уходе курсора)
+    FHoverNotFoundCache: TDictionary<string, TDateTime>; // GameID -> момент, когда закэшировано "не найдено" (TTL, см. HOVER_NOTFOUND_TTL_SEC)
+    SkipHoverImage: Boolean;                           // Необходимо чтобы появилось надписи на квадратом с FHoverNotFoundCache
+    FViewAsList: Boolean;
     //----------------------
     procedure StyleMenuClick(Sender: TObject);
     function GetFConfig: TMemIniFile;
@@ -244,10 +279,14 @@ type
     // Переключение фильтр по информационным лейблам
     procedure ApplyLabelFilter(const Category: string; const Value: string);
     procedure LabelFilterMenuItemClick(Sender: TObject);
+    // ListView thumbnails
+    procedure ResizeListViewTiles(Delta: Integer);
    public
     FConfig: TMemIniFile;
     //Загрузка торрентов
     FTorrentConfig: TMemIniFile;
+   protected
+    function GetListViewUsableWidth: Integer;
   end;
 
 var
@@ -256,6 +295,7 @@ var
   IgnoreDir: String;
   HideInTray: Boolean = False;
   EnabledMiniatures: Boolean = False;
+  CachedAt: TDateTime;
 
 implementation
 
@@ -263,36 +303,6 @@ implementation
 
 uses FullScreenImage, DialogForm, Help, ToolBtnProperties, GamesCore,
      SystemUtils, ToolBars;
-
-//-----------------------------------------------------------------------------
-procedure TSGLMainForm.StyleMenuClick(Sender: TObject);
-//Нажатие на меню для скинов
-var
-  I: Integer;
-  Root: TMenuItem;
-  CurrentStyleName: string;
-begin
-  if not (Sender is TMenuItem) then Exit;
-
-  Root := TMenuItem(Sender).Parent;
-
-  // Снимаем все галочки
-  for I := 0 to Root.Count - 1 do
-    Root.Items[I].Checked := False;
-
-  TMenuItem(Sender).Checked := True;
-
-  // Применяем выбранный стиль
-  if TMenuItem(Sender).Tag = -1 then
-    TStyleManager.SetStyle('Windows')
-  else
-    TStyleManager.TrySetStyle(TMenuItem(Sender).Hint);
-
-  CurrentStyleName := TStyleManager.ActiveStyle.Name;
-
-  FConfig.WriteString('SGAllSettings', 'Styles', CurrentStyleName);
-  FConfig.UpdateFile;
-end;
 
 //----CONFIG----
 //------------------------------------------------------------------------------
@@ -342,7 +352,8 @@ if Write = true then
    end;
   if not FConfig.ValueExists('SGAllSettings', 'IgnoreDir') then
      FConfig.WriteString('SGAllSettings', 'IgnoreDir', '');
-  FConfig.WriteInteger('SGAllSettings', 'ListViewWidth', Panel3.Width);
+  if FConfig.ReadBool('SGAllSettings', 'ShowDetailsPanel', True) then
+    FConfig.WriteInteger('SGAllSettings', 'ListViewWidth', Panel3.Width);
   FConfig.WriteInteger('SGAllSettings', 'InfoPanelHeight', ScrollBox1.Height);
   FConfig.WriteBool('SGAllSettings', 'ShowToolBar', ToolBar1.Visible);
   FConfig.WriteString('SGAllSettings', 'ToolBarPosition', GetEnumName(TypeInfo(TAlign), Ord(ToolBar1.Align)));
@@ -367,32 +378,33 @@ if Write = true then
   end;
   IgnoreDir := FConfig.ReadString('SGAllSettings', 'IgnoreDir', '');
   HideInTray:= FConfig.ReadBool('SGAllSettings', 'HideInTray', False);
-  Hideonstartup1.Checked := FConfig.ReadBool('SGAllSettings', 'HideInTray', False);
+  HideonstartupMenuItem.Checked := FConfig.ReadBool('SGAllSettings', 'HideInTray', False);
   if isIconic(Handle) then
-  Show1.Caption := 'Show' else Show1.Caption := 'Hide';
-  Panel3.Width := FConfig.ReadInteger('SGAllSettings', 'ListViewWidth', SGLMainForm.Width div 3);
+  ShowMenuItem.Caption := 'Show' else ShowMenuItem.Caption := 'Hide';
+  if FConfig.ReadBool('SGAllSettings', 'ShowDetailsPanel', True) then
+    Panel3.Width := FConfig.ReadInteger('SGAllSettings', 'ListViewWidth', SGLMainForm.Width div 3);
   ScrollBox1.Height := FConfig.ReadInteger('SGAllSettings', 'InfoPanelHeight', ScrollBox1.Height);
   if FConfig.ReadBool('SGAllSettings', 'ShowToolBar', False) then
    begin
     ToolBar1.Visible := True;
-    ShowToolBar.Checked := True;
+    ToolBarShowMenuItem.Checked := True;
    end else
    begin
     ToolBar1.Visible := False;
-    ShowToolBar.Checked := False;
+    ToolBarShowMenuItem.Checked := False;
    end;
   //ToolBar
   s := FConfig.ReadString('SGAllSettings', 'ToolBarPosition', 'alTop');
   ToolBar1.Align := TAlign(GetEnumValue(TypeInfo(TAlign), s));
-  UpdateToolbarMenuChecks(ToolBarTop1, ToolBar1);
+  UpdateToolbarMenuChecks(ToolBarTopMenuItem, ToolBar1);
   //---------------------------------------------------------------------------
-  Autostart1.Checked := IsInStartupFolder;
-  EmptyWorkingSet1.Checked := FConfig.ReadBool('SGAllSettings', 'EmptyWorkingSet', False);
+  AutostartMenuItem.Checked := IsInStartupFolder;
+  EmptyWorkingSetMenuItem.Checked := FConfig.ReadBool('SGAllSettings', 'EmptyWorkingSet', False);
   if FConfig.ReadBool('SGAllSettings', 'Enabled miniatures', False) then
    begin
     EnabledMiniatures := True;
     ScrollBox2.Visible := True;
-    Enabledimagegallery1.Checked := True;
+    EnabledimagegalleryMenuItem.Checked := True;
     Splitter3.Visible := True;
     ScrollBox2.Height := FConfig.ReadInteger('SGAllSettings', 'ThumbPos', ScrollBox2.Height);
     // Пересчитываем размер миниатюр под загруженную высоту
@@ -403,7 +415,7 @@ if Write = true then
    begin
     EnabledMiniatures := False;
     ScrollBox2.Visible := False;
-    Enabledimagegallery1.Checked := False;
+    EnabledimagegalleryMenuItem.Checked := False;
     Splitter3.Visible := False;
    end;
   // Принудительно заполняем ComboBox1 один раз при запуске
@@ -412,10 +424,55 @@ if Write = true then
   //---------------------------------------------------------------------------
   if FConfig.ReadBool('SGAllSettings', 'MultiLineTab', False) then
    begin
-    Multilinetabs1.Checked := True;
+    MultilinetabsMenuItem.Checked := True;
     TabControl1.MultiLine := True;
    end;
-  UseBinaryCache1.Checked := FConfig.ReadBool('SGAllSettings', 'UseBinaryCache', False);
+  UseBinaryCacheMenuItem.Checked := FConfig.ReadBool('SGAllSettings', 'UseBinaryCache', False);
+  if FConfig.ReadBool('SGAllSettings', 'ShowDetailsPanel', True) then
+    begin
+     ShowGameDetailsMenuItem.Checked := True;
+     Panel3.Align := alLeft;
+     Panel3.Width := FConfig.ReadInteger('SGAllSettings', 'ListViewWidth', SGLMainForm.Width div 3);
+     Splitter1.Visible := True;
+     Splitter1.Align := alLeft;
+     Panel1.Visible := True;
+     EnabledimagegalleryMenuItem.Enabled := True;
+    end else
+    begin
+     ShowGameDetailsMenuItem.Checked := False;
+     Panel1.Visible := False;
+     Splitter1.Visible := False;
+     Panel3.Align := alClient;
+     EnabledimagegalleryMenuItem.Enabled := False;
+    end;
+   FShowImageOnHover := FConfig.ReadBool('SGAllSettings', 'ShowImageOnHover', False);
+   ShowImageonHoverMenuItem.Checked := FShowImageOnHover;
+  ViewasThumbnailsMenuItem.Checked := FConfig.ReadBool('SGAllSettings', 'ViewAsIcons', False);
+  ViewasListMenuItem.Checked := FConfig.ReadBool('SGAllSettings', 'ViewAsList', False);
+  FViewAsList         := ViewasListMenuItem.Checked;
+  ShowImageonHoverMenuItem.Enabled := ViewasThumbnailsMenuItem.Checked or ViewasListMenuItem.Checked;
+  if FViewAsList then
+  begin
+    ListView1.ViewStyle := vsIcon;
+    ListView1.LargeImages := nil;
+    FListItemHeightImages.Width  := 100;
+    FListItemHeightImages.Height := 50;
+    ListView1.LargeImages := FListItemHeightImages;
+    ListView1.OnAdvancedCustomDrawItem := ListView1AdvancedCustomDrawItem;
+    ResizeListViewTiles(0);
+  end
+  else if ViewasThumbnailsMenuItem.Checked then
+  begin
+    ListView1.ViewStyle := vsIcon;
+    FListItemHeightImages.Width  := FConfig.ReadInteger('SGAllSettings', 'TileWidth', 125);
+    FListItemHeightImages.Height := FConfig.ReadInteger('SGAllSettings', 'TileHeight', 100);
+    ListView1.LargeImages := FListItemHeightImages;
+    ListView1.OnAdvancedCustomDrawItem := ListView1AdvancedCustomDrawItem;
+  end else
+  begin
+    ListView1.ViewStyle := vsReport;
+    ListView1.OnAdvancedCustomDrawItem := nil;
+  end;
  end;
 end;
 
@@ -529,7 +586,23 @@ begin
   if Assigned(FSelectedPlatformsAll) then FreeAndNil(FSelectedPlatformsAll);
   if Assigned(FSelectedPlatformsInstalled) then FreeAndNil(FSelectedPlatformsInstalled);
   if Assigned(FSelectedPlatformsFavorites) then FreeAndNil(FSelectedPlatformsFavorites);
+  // Ибранные
   if Assigned(FFavoriteIDs) then FreeAndNil(FFavoriteIDs);
+  // ListView thumbnails
+  if Assigned(FListItemHeightImages) then FreeAndNil(FListItemHeightImages);
+  // Превью по наведению (Hot) в ListView
+  if Assigned(FHoverLoadThread) then begin
+    FHoverLoadThread.Terminate;
+    if Assigned(FHoverEvent) then FHoverEvent.SetEvent; // разбудить поток, чтобы он вышел
+    FHoverLoadThread.WaitFor;
+    FreeAndNil(FHoverLoadThread);
+  end;
+  if Assigned(FHoverEvent) then FreeAndNil(FHoverEvent);
+  if Assigned(FHoverLock)  then FreeAndNil(FHoverLock);
+  if Assigned(FHoverBitmap) then FreeAndNil(FHoverBitmap);
+  if Assigned(FHoverDwellTimer) then FreeAndNil(FHoverDwellTimer);
+  if Assigned(FHoverPathCache)  then FreeAndNil(FHoverPathCache);
+  if Assigned(FHoverNotFoundCache)  then FreeAndNil(FHoverNotFoundCache);
   //------------------------------------
 
   RegIni(True);
@@ -583,6 +656,24 @@ begin
   ImgList := TStringList.Create;
   ImgList.Duplicates := dupIgnore;
   ImgList.CaseSensitive := False;
+
+  // Кастомная отрисовка элементов ListView
+  FListItemHeightImages := TImageList.Create(Self);
+  // Превью по наведению (Hot) в ListView
+  FHoverBitmap := TBitmap.Create;
+  FHoverBitmap.PixelFormat := pf32bit;
+  FHoverLock   := TCriticalSection.Create;
+  FHoverEvent  := TEvent.Create(nil, True, False, '');
+  FHoverPendingIndex := -1;
+  StartHoverLoadThread;
+  FHoverPathCache  := TDictionary<string, string>.Create;
+  FHoverDwellID    := '';
+  FHoverDwellIndex := -1;
+  FHoverDwellTimer := TTimer.Create(Self);
+  FHoverDwellTimer.Interval := 150;   // задержка перед стартом поиска картинки
+  FHoverDwellTimer.Enabled  := False;
+  FHoverDwellTimer.OnTimer  := HoverDwellTimerTimer;
+  FHoverNotFoundCache := TDictionary<string, TDateTime>.Create;
 
   LaunchBoxDir := 'E:\LaunchBox'{GetExecPath};
   GetFConfig;
@@ -653,16 +744,23 @@ begin
    end;
 
   //Создание список стиль
-  BuildStylesMenu(StyleMenu1, StyleMenuClick);
-  StylesLoad(FConfig, StyleMenu1);
+  BuildStylesMenu(StyleMenuItem, StyleMenuClick);
+  StylesLoad(FConfig, StyleMenuItem);
 
   FinalizeLoading;
+
+  // Убираем мерцание в ListView когда включены стили
+  ListView1.ControlStyle := ListView1.ControlStyle + [csOpaque];
+
+  // Коррекции размера плиток при первом запуске
+  if ViewasThumbnailsMenuItem.Checked then
+    ResizeListViewTiles(0);
 end;
 
 procedure TSGLMainForm.FormKeyDown(Sender: TObject; var Key: Word;
   Shift: TShiftState);
 begin
- if Key = ORD(VK_F1) then About1Click(Sender);
+ if Key = ORD(VK_F1) then AboutMenuItemClick(Sender);
 
  if Key = VK_F5 then
   begin
@@ -693,25 +791,53 @@ begin
       FocusControl(TabControl1);
       TabControl1.OnChange(self);
    end;
+
+  //Ctrl + '+' / Ctrl + '-' — размер плиток ListView (только vsIcon)
+  if (ssCtrl in Shift) and ((Key = VK_OEM_PLUS) or (Key = VK_ADD)) then
+   begin
+    ResizeListViewTiles(15);
+    Key := 0;
+    Exit;
+   end;
+
+  if (ssCtrl in Shift) and ((Key = VK_OEM_MINUS) or (Key = VK_SUBTRACT)) then
+   begin
+    ResizeListViewTiles(-15);
+    Key := 0;
+    Exit;
+   end;
 end;
 
 procedure TSGLMainForm.FormResize(Sender: TObject);
+var
+  NewW: Integer;
 begin
-  AutoSizeListViewColumns;
+  // Колонки в Report-режиме
+  if ListView1.ViewStyle = vsReport then
+    AutoSizeListViewColumns;
+
   ComboBox1.Width := Panel4.Width div 2 - 6;
-  ComboBox2.Left := ComboBox1.Width + 6;
+  ComboBox2.Left  := ComboBox1.Width + 6;
   ComboBox2.Width := ComboBox1.Width - 42;
   PlatformBtn.Left := Panel4.Width - 42;
   ResizeLabelToText(Label1);
   UpdateToolBarWrap(ToolBar1);
-  //Миниатюры
+
+  //--- Миниатюры (нижняя галерея) ---
   if EnabledMiniatures and ScrollBox2.Visible then
   begin
-    // Фиксируем высоту под одну строку миниатюр
     FlowPanel1.Height := ScrollBox2.Height - GetSystemMetrics(SM_CYHSCROLL);
-
-    // Пересчитываем ширину контента
     ScrollBox2.HorzScrollBar.Range := FlowPanel1.Width;
+  end;
+
+  //--- Плитки / список в ListView ---
+  if not Assigned(FListItemHeightImages) then Exit;
+  if ListView1.ViewStyle <> vsIcon then Exit;
+
+  if FViewAsList then
+  begin
+    ResizeListViewTiles(0);
+    Exit;
   end;
 end;
 
@@ -720,21 +846,434 @@ end;
 
 //----LISTVIEW----
 //------------------------------------------------------------------------------
+procedure TSGLMainForm.ListView1AdvancedCustomDrawItem(Sender: TCustomListView;
+  Item: TListItem; State: TCustomDrawState; Stage: TCustomDrawStage;
+  var DefaultDraw: Boolean);
+const
+  HOVER_NOTFOUND_TTL_SEC = 20;
+
+  function GetShadowColorForStyle(const StyleName: string; DefaultColor: TColor): TColor;
+  begin
+  if SameText(StyleName, 'Windows') then
+    Result := clWhite
+  else if SameText(StyleName, 'Material Oxford Blue') then
+    Result := clWhite
+  else if SameText(StyleName, 'Stellar Dark') then
+    Result := clWhite
+  else if SameText(StyleName, 'Sky') then
+    Result := clWhite
+  else if SameText(StyleName, 'Glow') then
+    Result := clWhite
+  else if SameText(StyleName, 'Windows11 Impressive Dark') then
+    Result := clWhite
+  else if SameText(StyleName, 'Calypso') then
+    Result := clWhite
+  else if SameText(StyleName, 'Calypso LE') then
+    Result := clWhite
+  else if SameText(StyleName, 'Glossy') then
+    Result := clWhite
+  else if SameText(StyleName, 'Slate Classico') then
+    Result := clWhite
+  else if SameText(StyleName, 'Windows11 Polar Dark') then
+    Result := clWhite
+  else
+    Result := DefaultColor;
+  end;
+var
+  R, TextR, CalcR, PlatR, BorderR, FocusR: TRect;
+  RealIndex: Integer;
+  NameStr, PlatStr: string;
+  TextH: Integer;
+  OldSize: Integer;
+  OldColor: TColor;
+  OldStyle: TFontStyles;
+  IsSelected, IsHot, IsFocused: Boolean;
+  Radius: Integer;
+  LStyle: TCustomStyleServices;
+  LDetails: TThemedElementDetails;
+  BgColor, BorderColor, TextColor, PlatColor: TColor;
+  GameID: string;
+  ImgR, DstR: TRect;
+  ScaleW, ScaleH, Scale: Double;
+  DrawW, DrawH: Integer;
+  UseShadow: Boolean;
+begin
+  if Stage <> cdPrePaint then
+  begin
+    DefaultDraw := True;
+    Exit;
+  end;
+
+  DefaultDraw := False;
+
+  if FClosing or not FLoadingComplete then Exit;
+  if (Item.Index < 0) or (Item.Index >= Length(FFilteredIndices)) then Exit;
+
+  RealIndex := FFilteredIndices[Item.Index];
+  if (RealIndex < 0) or (RealIndex >= Length(FGameData)) then Exit;
+
+  NameStr := FGameData[RealIndex].GameName;
+
+  // Формируем нижнюю подпись: "Platform  -  Year"
+  PlatStr := FGameData[RealIndex].Platforms;
+  if FGameData[RealIndex].ReleaseYear <> 0 then
+  begin
+    if PlatStr <> '' then
+      PlatStr := PlatStr + '  -  ' + IntToStr(FGameData[RealIndex].ReleaseYear)
+    else
+      PlatStr := IntToStr(FGameData[RealIndex].ReleaseYear);
+  end;
+
+  R := Item.DisplayRect(drBounds);
+  IsSelected := cdsSelected in State;
+  IsHot      := cdsHot in State;
+  IsFocused  := cdsFocused in State;
+
+  Radius   := 6;
+  LStyle   := StyleServices;
+
+  // =====================================================
+  // 1. Цвета
+  // =====================================================
+  if IsSelected then
+    begin
+      BgColor     := LStyle.GetSystemColor(clHighlight);
+      BorderColor := LStyle.GetSystemColor(clHighlight);
+      TextColor   := LStyle.GetSystemColor(clHighlightText);
+      PlatColor   := LStyle.GetSystemColor(clHighlightText);
+    end
+    else if IsHot then
+    begin
+      BgColor     := LStyle.GetSystemColor(clBtnFace);
+      BorderColor := LStyle.GetSystemColor(clBtnShadow);
+      TextColor   := LStyle.GetSystemColor(clWindowText);
+      PlatColor   := LStyle.GetSystemColor(clGrayText);
+    end
+    else
+    begin
+      BgColor     := LStyle.GetSystemColor(clWindow);
+      BorderColor := LStyle.GetSystemColor(clBtnFace);
+      TextColor   := LStyle.GetSystemColor(clWindowText);
+      PlatColor   := LStyle.GetSystemColor(clGrayText);
+    end;
+
+  // =====================================================
+  // 2. Современная рамка + фон
+  // =====================================================
+  BorderR := R;
+  InflateRect(BorderR, -2, -2);
+
+  if FViewAsList and IsHot then
+    InflateRect(BorderR, -2, -2);
+
+  Sender.Canvas.Brush.Color := BgColor;
+  Sender.Canvas.Pen.Color   := BorderColor;
+  Sender.Canvas.Pen.Width   := 1;
+  Sender.Canvas.RoundRect(BorderR.Left, BorderR.Top,
+                          BorderR.Right, BorderR.Bottom, Radius, Radius);
+
+  // Рамка фокуса
+  if IsFocused and IsSelected then
+  begin
+    Sender.Canvas.Pen.Color := BorderColor;
+    Sender.Canvas.Pen.Width := 1;
+    Sender.Canvas.Brush.Style := bsClear;
+    InflateRect(BorderR, 1, 1);
+    Sender.Canvas.RoundRect(BorderR.Left, BorderR.Top,
+                            BorderR.Right, BorderR.Bottom, Radius + 1, Radius + 1);
+    Sender.Canvas.Brush.Style := bsSolid;
+  end;
+
+  // =====================================================
+  // 2.5. Превью скриншота при наведении (Hot)
+  // =====================================================
+  // В FViewAsList картинка слева — часть самого режима, поэтому её
+  // подгружаем на hot независимо от опции ShowImageOnHover (которая
+  // управляет только центральным превью в режиме плиток).
+  UseShadow := False;
+  GameID := '';
+  if IsHot and FShowImageOnHover then
+  begin
+    GameID := FGameData[RealIndex].ID;
+    if GameID = '' then
+      GameID := '#' + IntToStr(RealIndex);
+
+    SkipHoverImage := False;
+    FHoverLock.Enter;
+    try
+      if FHoverNotFoundCache.TryGetValue(GameID, CachedAt) then
+      begin
+        if SecondsBetween(Now, CachedAt) < HOVER_NOTFOUND_TTL_SEC then
+          SkipHoverImage := True
+        else
+          FHoverNotFoundCache.Remove(GameID); // разрешаем повторный скан
+      end;
+    finally
+      FHoverLock.Leave;
+    end;
+
+    if not SkipHoverImage then
+    begin
+      // Курсор перешёл на другой item — сразу освобождаем предыдущее превью
+      if (GameID <> FHoverBitmapID) and (FHoverBitmap.Width > 0) then
+      begin
+        FHoverBitmapID := '';
+        FHoverBitmap.SetSize(0, 0);
+        FHoverBitmap.Dormant;
+      end;
+
+      if (GameID <> FHoverQueuedID) and
+         ((GameID <> FHoverBitmapID) or (FHoverBitmap.Width = 0)) then
+      begin
+        // Не стартуем поиск на каждый repaint — ждём, что курсор
+        // задержится на элементе, и только потом запускаем запрос
+        if GameID <> FHoverDwellID then
+        begin
+          FHoverDwellID    := GameID;
+          FHoverDwellIndex := RealIndex;
+          FHoverDwellTimer.Enabled := False;
+          FHoverDwellTimer.Enabled := True;
+        end;
+      end;
+
+      // === Центральное превью — только для режима плиток, не для "View as List" ===
+      if not FViewAsList then
+      begin
+        if (GameID = FHoverBitmapID) and (FHoverBitmap.Width > 0) then
+        begin
+          ImgR := BorderR;
+          InflateRect(ImgR, -2, -2);
+
+          ScaleW := (ImgR.Right - ImgR.Left) / FHoverBitmap.Width;
+          ScaleH := (ImgR.Bottom - ImgR.Top) / FHoverBitmap.Height;
+          Scale  := Min(ScaleW, ScaleH);
+
+          DrawW := Ceil(FHoverBitmap.Width  * Scale);
+          DrawH := Ceil(FHoverBitmap.Height * Scale);
+
+          DstR := Rect(0, 0, DrawW, DrawH);
+          OffsetRect(DstR,
+            ImgR.Left + ((ImgR.Right - ImgR.Left) - DrawW) div 2,
+            ImgR.Top  + ((ImgR.Bottom - ImgR.Top) - DrawH) div 2);
+
+          SaveDC(Sender.Canvas.Handle);
+          try
+            IntersectClipRect(Sender.Canvas.Handle, ImgR.Left, ImgR.Top, ImgR.Right, ImgR.Bottom);
+            SetStretchBltMode(Sender.Canvas.Handle, HALFTONE);
+            SetBrushOrgEx(Sender.Canvas.Handle, 0, 0, nil);
+            Sender.Canvas.StretchDraw(DstR, FHoverBitmap);
+          finally
+            RestoreDC(Sender.Canvas.Handle, -1);
+          end;
+
+          UseShadow := True;
+        end;
+      end;
+    end;
+  end;
+
+  // =====================================================
+  // 3+4. Раскладка: list (новый) либо tiles (старая)
+  // =====================================================
+  if FViewAsList then
+  begin
+    // === СХЕМА «СПИСОК»: [IMG] [Caption / Platform] ===
+    var RowH := BorderR.Bottom - BorderR.Top;
+
+    var IconH := RowH - 2;
+    if IconH < 1 then IconH := 1;
+
+    var IconW := MulDiv(IconH, 4, 3);
+    if IconW < 1 then IconW := 1;
+
+    var IconTop := BorderR.Top + ((RowH - IconH) div 2);
+
+    var IconR := Rect(BorderR.Left + 2, IconTop,
+                      BorderR.Left + 2 + IconW, IconTop + IconH);
+
+    // Картинка реально рисуется только при Hot и когда она уже загружена
+    var ShowIconInList := IsHot and FShowImageOnHover and
+                          (GameID <> '') and
+                          (GameID = FHoverBitmapID) and
+                          (FHoverBitmap.Width > 0);
+
+    // --- Картинка слева: contain, без обрезки ---
+    if ShowIconInList then
+    begin
+      Scale := Min((IconR.Right - IconR.Left) / FHoverBitmap.Width,
+                   (IconR.Bottom - IconR.Top)  / FHoverBitmap.Height);
+
+      DrawW := Max(1, Round(FHoverBitmap.Width  * Scale));
+      DrawH := Max(1, Round(FHoverBitmap.Height * Scale));
+
+      DstR := Rect(0, 0, DrawW, DrawH);
+      OffsetRect(DstR,
+        IconR.Left + ((IconR.Right - IconR.Left) - DrawW) div 2,
+        IconR.Top  + ((IconR.Bottom - IconR.Top) - DrawH) div 2);
+
+      SetStretchBltMode(Sender.Canvas.Handle, HALFTONE);
+      SetBrushOrgEx(Sender.Canvas.Handle, 0, 0, nil);
+      Sender.Canvas.StretchDraw(DstR, FHoverBitmap);
+    end;
+
+    // --- Текст: правее картинки ТОЛЬКО когда она нарисована,
+    //     иначе — от левого края, как в обычном списке ---
+    var TxtR := BorderR;
+    if ShowIconInList then
+      TxtR.Left := IconR.Right + 10
+    else
+      TxtR.Left := BorderR.Left + 6;
+
+    TxtR.Right := BorderR.Right - 2;
+    InflateRect(TxtR, 0, -2);
+
+    // Caption — верхняя половина
+    var CapR := TxtR;
+    CapR.Top    := CapR.Top + 4;
+    CapR.Bottom := CapR.Top + ((TxtR.Bottom - TxtR.Top) div 2) - 2;
+
+    OldStyle := Sender.Canvas.Font.Style;
+    Sender.Canvas.Brush.Style := bsClear;
+    Sender.Canvas.Font.Color := TextColor;
+
+    DrawText(Sender.Canvas.Handle, PChar(NameStr), Length(NameStr), CapR,
+      DT_LEFT or DT_WORDBREAK or DT_NOPREFIX or DT_END_ELLIPSIS);
+
+    Sender.Canvas.Font.Style := OldStyle;
+
+    // Platform — нижняя половина
+    if PlatStr <> '' then
+    begin
+      var PlatR2 := TxtR;
+      PlatR2.Top := CapR.Bottom + 2;
+
+      OldSize := Sender.Canvas.Font.Size;
+      try
+        Sender.Canvas.Font.Size := Max(7, ListView1.Font.Size - 2);
+        Sender.Canvas.Font.Color := PlatColor;
+        DrawText(Sender.Canvas.Handle, PChar(PlatStr), Length(PlatStr), PlatR2,
+          DT_LEFT or DT_SINGLELINE or DT_VCENTER or DT_END_ELLIPSIS or DT_NOPREFIX);
+      finally
+        Sender.Canvas.Font.Size := OldSize;
+      end;
+    end;
+  end
+  else
+  begin
+    // =====================================================
+    // 3. Название по центру с переносом
+    // =====================================================
+    TextR := BorderR;
+    InflateRect(TextR, -6, -4);
+    TextR.Bottom := TextR.Bottom - 18;
+
+    OldStyle := Sender.Canvas.Font.Style;
+    Sender.Canvas.Brush.Style := bsClear;
+
+    CalcR := TextR;
+    DrawText(Sender.Canvas.Handle, PChar(NameStr), Length(NameStr), CalcR,
+      DT_CENTER or DT_WORDBREAK or DT_CALCRECT or DT_NOPREFIX or DT_END_ELLIPSIS);
+    TextH := CalcR.Bottom - CalcR.Top;
+
+    // ---- Рисуем сверху caption ----
+    if IsHot and FShowImageOnHover then
+    begin
+      // При наведении текст прижимается к верхнему краю плитки
+      TextR.Top := BorderR.Top + 4;              // небольшой отступ сверху
+      TextR.Bottom := TextR.Top + TextH;         // высота ровно под текст
+    end
+    else
+    if TextH < (TextR.Bottom - TextR.Top) then
+      TextR.Top := TextR.Top + ((TextR.Bottom - TextR.Top) - TextH) div 2;
+
+    // === ВЫБОР МЕТОДА ОТРИСОВКИ ===
+    if UseShadow then
+    begin
+      // Рисуем текст с тенью (например, чёрная тень толщиной 1)
+      var ShadowCol: TColor;
+      ShadowCol := GetShadowColorForStyle(TStyleManager.ActiveStyle.Name, TextColor);
+      CanvasTextShadowBorder(Sender.Canvas, NameStr, TextR,
+        DT_CENTER or DT_WORDBREAK or DT_NOPREFIX or DT_END_ELLIPSIS,
+        ShadowCol, 1);
+    end
+    else
+    begin
+      // Обычный DrawText (как было)
+      Sender.Canvas.Font.Color := TextColor;
+      DrawText(Sender.Canvas.Handle, PChar(NameStr), Length(NameStr), TextR,
+        DT_CENTER or DT_WORDBREAK or DT_NOPREFIX or DT_END_ELLIPSIS);
+    end;
+
+    Sender.Canvas.Font.Style := OldStyle;
+
+    // =====================================================
+    // 4. Платформа снизу слева
+    // =====================================================
+    if PlatStr <> '' then
+    begin
+      PlatR := BorderR;
+      PlatR.Top := PlatR.Bottom - 20;
+      InflateRect(PlatR, -6, -1);
+
+      OldSize  := Sender.Canvas.Font.Size;
+      try
+        Sender.Canvas.Font.Size := Max(7, ListView1.Font.Size - 2);
+        //Sender.Canvas.Brush.Style := bsClear;
+
+        if UseShadow then
+        begin
+          // Рисуем текст с тенью (например, чёрная тень толщиной 1)
+          var ShadowCol: TColor;
+          ShadowCol := GetShadowColorForStyle(TStyleManager.ActiveStyle.Name, TextColor);
+          CanvasTextShadowBorder(Sender.Canvas, PlatStr, PlatR,
+            DT_LEFT or DT_SINGLELINE or DT_VCENTER or DT_END_ELLIPSIS or DT_NOPREFIX,
+            ShadowCol, 1);
+        end
+        else
+        begin
+          // Обычный DrawText (как было)
+          Sender.Canvas.Font.Color := TextColor;
+          DrawText(Sender.Canvas.Handle, PChar(PlatStr), Length(PlatStr), PlatR,
+            DT_LEFT or DT_SINGLELINE or DT_VCENTER or DT_END_ELLIPSIS or DT_NOPREFIX);
+        end;
+      finally
+        Sender.Canvas.Font.Size  := OldSize;
+      end;
+    end;
+  end;
+end;
+
 procedure TSGLMainForm.ListView1ContextPopup(Sender: TObject; MousePos: TPoint;
   var Handled: Boolean);
 var
   Item: TListItem;
 begin
-  Item := (Sender as TListView).GetItemAt(MousePos.X, MousePos.Y);
-  if Item = nil then
-    Handled := True  // Не показывать меню на пустом месте
+  // 1. Клавиатура: MousePos = (-1,-1) — берём выбранный элемент
+  if (MousePos.X = -1) and (MousePos.Y = -1) then
+    Item := ListView1.Selected
   else
-   begin
-    Handled := False; // Показывать меню на элементе
-    ListView1.ItemIndex := Item.Index;
-    UpdateFavoritesMenuItem;
-    UpdateMenuItemsForCurrentGame;
-   end;
+    Item := ListView1.GetItemAt(MousePos.X, MousePos.Y);
+
+  // 2. Нет элемента (или рассинхрон индексов) — меню не показываем
+  if (Item = nil) or (Item.Index >= Length(FFilteredIndices)) then
+  begin
+    Handled := True;
+    Exit;
+  end;
+
+  Handled := False;
+  ListView1.ItemIndex := Item.Index;
+
+  // 3. Ошибка в динамической части не должна убивать всё меню
+  try
+    UpdateExtrasMenu(FFilteredIndices[Item.Index]);
+  except
+    on E: Exception do
+      OutputDebugString(PChar('UpdateExtrasMenu: ' + E.Message));
+  end;
+
+  UpdateFavoritesMenuItem;
+  UpdateMenuItemsForCurrentGame;
 end;
 
 procedure TSGLMainForm.ListView1Data(Sender: TObject; Item: TListItem);
@@ -748,7 +1287,10 @@ begin
   RealIndex := FFilteredIndices[Item.Index];
   if (RealIndex < 0) or (RealIndex >= Length(FGameData)) then Exit;
 
-  Item.Caption := FGameData[RealIndex].GameName;
+  if ListView1.ViewStyle = vsReport then
+    Item.Caption := FGameData[RealIndex].GameName
+  else
+    Item.Caption := '';
 
   if ListView1.Columns.Count >= 2 then
   begin
@@ -823,9 +1365,30 @@ begin
   Delete(FTypeBuffer, Length(FTypeBuffer), 1);
 end;
 
+procedure TSGLMainForm.ListView1MouseLeave(Sender: TObject);
+begin
+  // Полностью сбрасываем только когда курсор реально ушёл из ListView
+  FHoverDwellTimer.Enabled := False;
+  FHoverDwellID    := '';
+  FHoverDwellIndex := -1;
+
+  FHoverLock.Enter;
+  try
+    FHoverPendingIndex := -1;
+    FHoverQueuedID     := '';
+  finally
+    FHoverLock.Leave;
+  end;
+
+  // Картинку можно оставить — она пропадёт при следующем paint без IsHot
+  // Если хотите жёстко очищать:
+   FHoverBitmapID := '';
+   FHoverBitmap.SetSize(0, 0);
+end;
+
 procedure TSGLMainForm.ListView1SelectItem(Sender: TObject; Item: TListItem; Selected: Boolean);
 begin
- if FClosing then Exit; // ← добавь сюда
+ if FClosing then Exit;
 
   if not Selected then
   begin
@@ -837,8 +1400,152 @@ begin
   FSelectionTimer.Enabled := True;
 end;
 
+procedure TSGLMainForm.ResizeListViewTiles(Delta: Integer);
+const
+  MinW      = 80;
+  AspectNum = 100;
+  AspectDen = 125;
+  ListMinW  = 160;
+  ListH     = 50;
+var
+  NewW, NewH, MaxW, MaxW_W, MaxW_H, UsableW: Integer;
+begin
+  if not Assigned(FListItemHeightImages) then Exit;
+  if ListView1.ViewStyle <> vsIcon then Exit;
+
+  UsableW := GetListViewUsableWidth;
+
+  // === View as List ===
+  if FViewAsList then
+  begin
+    MaxW := UsableW - 8;
+    if MaxW < ListMinW then MaxW := ListMinW;
+
+    NewW := FListItemHeightImages.Width + Delta;
+    if NewW < ListMinW then NewW := ListMinW;
+    if NewW > MaxW    then NewW := MaxW;
+
+    // Всегда пересоздаём/перепривязываем ImageList и spacing.
+    // После смены стиля (особенно 'Windows') ListView сбрасывает
+    // LVM_SETICONSPACING — простой Perform без rebind не помогает.
+    ListView1.LargeImages := nil;
+    if (FListItemHeightImages.Width <> NewW) or
+       (FListItemHeightImages.Height <> ListH) then
+    begin
+      FreeAndNil(FListItemHeightImages);
+      FListItemHeightImages := TImageList.Create(Self);
+      FListItemHeightImages.Width  := NewW;
+      FListItemHeightImages.Height := ListH;
+    end;
+    ListView1.LargeImages := FListItemHeightImages;
+
+    ListView1.Perform(LVM_SETICONSPACING, 0,
+      MAKELPARAM(UsableW, ListH + 25));
+    ListView1.Invalidate;
+    Exit;
+  end;
+
+  // === View as Thumbnails ===
+  if not ViewasThumbnailsMenuItem.Checked then Exit;
+
+  MaxW_W := UsableW - 20;
+  if MaxW_W < MinW then MaxW_W := MinW;
+
+  MaxW_H := Round((ListView1.ClientHeight - 20) * AspectDen / AspectNum);
+  if MaxW_H < MinW then MaxW_H := MinW;
+
+  MaxW := Min(MaxW_W, MaxW_H);
+
+  NewW := FListItemHeightImages.Width + Delta;
+  if NewW < MinW then NewW := MinW;
+  if NewW > MaxW then NewW := MaxW;
+  if NewW = FListItemHeightImages.Width then Exit;
+
+  NewH := MulDiv(NewW, AspectNum, AspectDen);
+
+  ListView1.LargeImages := nil;
+  FreeAndNil(FListItemHeightImages);
+  FListItemHeightImages := TImageList.Create(Self);
+  FListItemHeightImages.Width  := NewW;
+  FListItemHeightImages.Height := NewH;
+  ListView1.LargeImages := FListItemHeightImages;
+
+  ListView1.Perform(LVM_SETICONSPACING, 0, MAKELPARAM(-1, -1));
+  ListView1.Invalidate;
+
+  FConfig.WriteInteger('SGAllSettings', 'TileWidth',  NewW);
+  FConfig.WriteInteger('SGAllSettings', 'TileHeight', NewH);
+  FConfig.UpdateFile;
+end;
+
+function TSGLMainForm.GetListViewUsableWidth: Integer;
+var
+  SbW: Integer;
+  HasVScroll: Boolean;
+begin
+  SbW := GetSystemMetrics(SM_CXVSCROLL);
+  HasVScroll := ListView1.HandleAllocated and
+                ((GetWindowLong(ListView1.Handle, GWL_STYLE) and WS_VSCROLL) <> 0);
+
+  Result := ListView1.ClientWidth;
+  if not HasVScroll then
+    Result := Result - SbW;   // резервируем место под будущий скроллбар
+
+  if Result < 100 then
+    Result := 100;
+end;
+
 //----OTHER COMPONENTS----
 //------------------------------------------------------------------------------
+procedure TSGLMainForm.StyleMenuClick(Sender: TObject);
+//Нажатие на меню для скинов
+var
+  I: Integer;
+  Root: TMenuItem;
+  CurrentStyleName: string;
+begin
+  if not (Sender is TMenuItem) then Exit;
+
+  Root := TMenuItem(Sender).Parent;
+
+  // Снимаем все галочки
+  for I := 0 to Root.Count - 1 do
+    Root.Items[I].Checked := False;
+
+  TMenuItem(Sender).Checked := True;
+
+  // Применяем выбранный стиль
+  if TMenuItem(Sender).Tag = -1 then
+    TStyleManager.SetStyle('Windows')
+  else
+    TStyleManager.TrySetStyle(TMenuItem(Sender).Hint);
+
+  CurrentStyleName := TStyleManager.ActiveStyle.Name;
+
+  FConfig.WriteString('SGAllSettings', 'Styles', CurrentStyleName);
+  FConfig.UpdateFile;
+
+  // После смены стиля метрики применяются не сразу (особенно для 'Windows').
+  // ForceQueue + повторный вызов для системного стиля.
+  TThread.ForceQueue(nil,
+    procedure
+    begin
+      if FClosing then Exit;
+      FormResize(Self);
+      ResizeListViewTiles(0);
+
+      // Системный стиль 'Windows' сбрасывает icon spacing позже остальных —
+      // делаем ещё один отложенный проход.
+      if SameText(CurrentStyleName, 'Windows') then
+        TThread.ForceQueue(nil,
+          procedure
+          begin
+            if FClosing then Exit;
+            ResizeListViewTiles(0);
+          end);
+    end);
+end;
+
 procedure TSGLMainForm.TabControl1Change(Sender: TObject);
 begin
 FTabChangeLock.Enter;
@@ -868,14 +1575,14 @@ if csDestroying in ComponentState then Exit;
 if Visible then
   begin
    Hide;
-   Show1.Caption := 'Show';
+   ShowMenuItem.Caption := 'Show';
   end
   else
   begin
     Show;
     Application.BringToFront;
     SetForegroundWindow(Handle);
-    Show1.Caption := 'Hide';
+    ShowMenuItem.Caption := 'Hide';
   end;
 end;
 
@@ -936,7 +1643,7 @@ begin
 
   with FullScreenForm do
     begin
-      Label1.Caption := ListView1.Selected.Caption;
+      Label1.Caption := FGameData[FFilteredIndices[ListView1.ItemIndex]].GameName;
       FullScreenForm.FullScreenImage.Picture.Assign(ScreenShotImage.Picture);
       Show;
     end;
@@ -969,263 +1676,104 @@ begin
   if EnabledMiniatures then SyncThumbnailSelection;
 end;
 
-//----MENUITEMS----
-//------------------------------------------------------------------------------
-procedure TSGLMainForm.Autostart1Click(Sender: TObject);
+procedure TSGLMainForm.Splitter3Moved(Sender: TObject);
+var
+  i, Idx, NewH, NewW: Integer;
+  Pnl: TPanel;
 begin
-with Sender as TMenuItem do
-   begin
-    Checked := not Checked;
-    ToggleSelfInStartupFolder(Checked);
-   end;
+  if not EnabledMiniatures then Exit;
+
+  NewH := ScrollBox2.Height - GetSystemMetrics(SM_CYHSCROLL) - (PADDING2 * 2) - 8;
+  if NewH < 20 then NewH := 20;
+  // Сохраняем пропорцию 100:74
+  NewW := MulDiv(NewH, 100, 74);
+
+  FThumbWidth := NewW;
+  FThumbHeight := NewH;
+
+  FlowPanel1.Height := FThumbHeight + 8 + (PADDING2 * 2);
+
+  for i := 0 to FlowPanel1.ControlCount - 1 do
+  begin
+    if not (FlowPanel1.Controls[i] is TPanel) then Continue;
+    Pnl := TPanel(FlowPanel1.Controls[i]);
+    Idx := Pnl.Tag;
+    if (Idx >= 0) and (Idx < Length(FAllImageFiles)) then
+      ResizeThumbnail(Pnl, FAllImageFiles[Idx]);
+  end;
+
+  // Пересчитать общую ширину
+  var ThumbW := FThumbWidth + 8 + (PADDING2 * 2);
+  var TotalWidth := FlowPanel1.ControlCount * ThumbW + PADDING2;
+  FlowPanel1.Width := TotalWidth + 30;
+
+  ScrollBox2.HorzScrollBar.Range := FlowPanel1.Width;
+  FlowPanel1.Realign;
+  FlowPanel1.Invalidate;
 end;
 
-procedure TSGLMainForm.Hideonstartup1Click(Sender: TObject);
+procedure TSGLMainForm.PopupActionBar1Popup(Sender: TObject);
 begin
-  with Sender as TMenuItem do
-   begin
-    Checked := not Checked;
-    FConfig.WriteBool('SGAllSettings', 'HideInTray', Checked);
-    FConfig.UpdateFile;
-   end;
+  RefreshPlatformFilterMenu;
 end;
 
-procedure TSGLMainForm.ShowToolBarClick(Sender: TObject);
+procedure TSGLMainForm.PlatformBtnClick(Sender: TObject);
+var
+  AnyChecked: Boolean;
+  i: Integer;
+  ClearAllItem, SelectAllItem: TMenuItem;
+  CurrentTab: string;
 begin
-with Sender as TMenuItem do
-   begin
-    Checked := not Checked;
-    ToolBar1.Visible := Checked;
-    FConfig.WriteBool('SGAllSettings', 'ShowToolBar', Checked);
-    FConfig.UpdateFile;
-   end;
-end;
+  if not FLoadingComplete then Exit;
 
-procedure TSGLMainForm.EmptyWorkingSet1Click(Sender: TObject);
-begin
-with Sender as TMenuItem do
-   begin
-    Checked := not Checked;
-    FConfig.WriteBool('SGAllSettings', 'EmptyWorkingSet', Checked);
-    FConfig.UpdateFile;
-   end;
-if MessageDlg('The application needs to restart to apply the changes. Restart now?',
-                mtConfirmation, [mbYes, mbNo], 0) = mrYes then
- begin
-  RegIni(True);
-  RestartApplication(FClosing);
- end;
-end;
+  CurrentTab := TabControl1.Tabs[TabControl1.TabIndex];
 
-procedure TSGLMainForm.Enabledimagegallery1Click(Sender: TObject);
-begin
-with Sender as TMenuItem do
-   begin
-    Checked := not Checked;
-    FConfig.WriteBool('SGAllSettings', 'Enabled miniatures', Checked);
-    FConfig.UpdateFile;
-   end;
-if MessageDlg('The application needs to restart to apply the changes. Restart now?',
-                mtConfirmation, [mbYes, mbNo], 0) = mrYes then
- begin
-  RegIni(True);
-  RestartApplication(FClosing);
- end;
-end;
+  // === Если не на All и не на Installed — ничего не делаем ===
+  if not (SameText(CurrentTab, 'All') or
+          SameText(CurrentTab, 'Installed') or
+          SameText(CurrentTab, 'Favorites')) then
+    Exit;   // ← Выходим, ничего не выполняем
 
-procedure TSGLMainForm.Multilinetabs1Click(Sender: TObject);
-begin
-with Sender as TMenuItem do
-   begin
-    Checked := not Checked;
-    TabControl1.MultiLine := Checked;
-    if Checked then TabControl1.TabWidth := 0;
-    Resize;
-    FConfig.WriteBool('SGAllSettings', 'MultiLineTab', Checked);
-    FConfig.UpdateFile;
-   end;
-end;
+  // === Дальше — только для вкладок All и Installed ===
+  RefreshPlatformFilterMenu;
 
-procedure TSGLMainForm.UseBinaryCache1Click(Sender: TObject);
-begin
-if not FLoadingComplete then Exit;
+  AnyChecked := False;
 
-with Sender as TMenuItem do
-   begin
-    Checked := not Checked;
-    FConfig.WriteBool('SGAllSettings', 'UseBinaryCache', Checked);
-    FConfig.UpdateFile;
-
-    if Checked = True then
-      FinalizeLoading(True) // включили кэш → пересканировать + перезапустить
-    else
+  // Проверяем состояние чекбоксов
+  for i := 0 to pmPlatformFilter.Items.Count - 1 do
+  begin
+    if (pmPlatformFilter.Items[i].Hint <> '') and
+       pmPlatformFilter.Items[i].Checked then
     begin
-     if MessageDlg('The application needs to restart to apply the changes. Restart now?',
-                mtConfirmation, [mbYes, mbNo], 0) = mrYes then
-      begin
-       RegIni(True);
-       RestartApplication(FClosing);
-      end;
+      AnyChecked := True;
+      Break;
     end;
-   end;
-end;
-
-procedure TSGLMainForm.Specifyfolders1Click(Sender: TObject);
-begin
-  with DiagForm do
-   begin
-    Caption := 'Specify folder';
-    Position := poDesktopCenter;
-    ActiveControl := Edit1;
-    Label2.Caption := 'Changes will take effect after switching tabs.';
-    Button3.Hint := 'Select a dir';
-    ifFile := False;
-    Edit1.Text := FConfig.ReadString('SGAllSettings', 'IgnoreDir', '');
-    DialogDir := LaunchBoxDir;
-    platformcombo.Visible := False;
-     if (Showmodal <> mrCancel) then
-      begin
-       FConfig.WriteString('SGAllSettings', 'IgnoreDir', Edit1.Text);
-       FConfig.UpdateFile;
-       IgnoreDir := Edit1.Text;
-
-       // Обновляем кэшированный список:
-       FIgnoredFolders.Clear;
-       StrToList(IgnoreDir, ';', FIgnoredFolders);
-      end;
-   end;
-end;
-
-procedure TSGLMainForm.Specifylanguagefolders1Click(Sender: TObject);
-begin
-  with DiagForm do
-   begin
-    Caption := 'Specify languages folder';
-    Position := poDesktopCenter;
-    ActiveControl := Edit1;
-    Label2.Caption := 'Changes will take effect after switching tabs.';
-    Button3.Hint := 'Select a dir';
-    ifFile := False;
-    Edit1.Text := FConfig.ReadString('LanguagesPack', 'MS-DOS', '');
-    DialogDir := LaunchBoxDir;
-    platformcombo.Items.Clear;
-    platformcombo.Visible := True;
-    FConfig.ReadSection('LanguagesPack',platformcombo.Items);
-    if platformcombo.Items.Count > 0 then
-      platformcombo.ItemIndex := 0;
-     if (Showmodal <> mrCancel) then
-      begin
-       FConfig.WriteString('LanguagesPack', platformcombo.Items[platformcombo.ItemIndex], Edit1.Text);
-       FConfig.UpdateFile;
-      end;
-   end;
-end;
-
-procedure TSGLMainForm.About1Click(Sender: TObject);
-begin
-with HelpForm do
-   begin
-     Position := poDesktopCenter;
-     Label2.Caption := 'ReleaseDate: ' + sReleaseDate;
-     HELPFORM_PAGECTRL1.ActivePageIndex := 0;
-     Show;
-   end;
-end;
-
-procedure TSGLMainForm.Exit1Click(Sender: TObject);
-begin
-  Close;
-end;
-
-procedure TSGLMainForm.OnExtrasMenuItemClick(Sender: TObject);
-var
-  MenuItem: TMenuItem;
-  FullPath: string;
-begin
-  if Sender is TMenuItem then
-  begin
-    MenuItem := TMenuItem(Sender);
-    FullPath := MenuItem.Hint;
-    ShellOpen(FullPath);
   end;
-end;
 
-procedure TSGLMainForm.Run1Click(Sender: TObject);
-begin
-  ListView1DblClick(Sender);
-end;
-
-procedure TSGLMainForm.Configuration1Click(Sender: TObject);
-var
-  AppPath, FullPath: string;
-begin
-  if ListView1.ItemIndex <> -1 then
+  // Находим пункты Select All и Clear All
+  ClearAllItem := nil;
+  SelectAllItem := nil;
+  for i := 0 to pmPlatformFilter.Items.Count - 1 do
   begin
-    AppPath := FGameData[FFilteredIndices[ListView1.ItemIndex]].ConfigurationPath;
-    FullPath := TPath.Combine(LaunchBoxDir, AppPath);
-    ShellOpen(FullPath);
+    if pmPlatformFilter.Items[i].Tag = 1 then
+      SelectAllItem := pmPlatformFilter.Items[i]
+    else if pmPlatformFilter.Items[i].Tag = 2 then
+      ClearAllItem := pmPlatformFilter.Items[i];
   end;
-end;
 
-procedure TSGLMainForm.Favorites1Click(Sender: TObject);
-var
-  RealIndex, CurIndex: Integer;
-begin
-  if ListView1.ItemIndex = -1 then Exit;
-
-  CurIndex := ListView1.ItemIndex;
-  RealIndex := FFilteredIndices[CurIndex];
-  ToggleFavorite(FGameData[RealIndex].ID);
-
-  if SameText(TabControl1.Tabs[TabControl1.TabIndex], 'Favorites') then
-    RemoveFilteredIndexFromView(CurIndex)
+  // Выполняем действие
+  if AnyChecked then
+  begin
+    if Assigned(ClearAllItem) then
+      PlatformFilterMenuClick(ClearAllItem);
+  end
   else
-    ListView1.Invalidate;
-end;
-
-procedure TSGLMainForm.Manual1Click(Sender: TObject);
-var
-  AppPath, FullPath: string;
-begin
-  if ListView1.ItemIndex <> -1 then
   begin
-    AppPath := FGameData[FFilteredIndices[ListView1.ItemIndex]].Manual;
-    FullPath := TPath.Combine(LaunchBoxDir, AppPath);
-    ShellOpen(FullPath);
+    if Assigned(SelectAllItem) then
+      PlatformFilterMenuClick(SelectAllItem);
   end;
-end;
 
-procedure TSGLMainForm.Customimagename1Click(Sender: TObject);
-begin
-  with DiagForm do
-   begin
-    Caption := ListView1.Selected.Caption;
-    Position := poDesktopCenter;
-    ActiveControl := Edit1;
-    Label2.Caption := 'Example: Tomb Raider Gold-01.jpg > Tomb Raider Gold';
-    Button3.Hint := 'Select an image';
-    ifFile := True;
-    Edit1.Text := NConfig.ReadString(FGameData[FFilteredIndices[ListView1.ItemIndex]].Platforms,
-      FGameData[FFilteredIndices[ListView1.ItemIndex]].ID, '');
-    DialogDir := LaunchBoxDir + '\Images\' + FGameData[FFilteredIndices[ListView1.ItemIndex]].Platforms;
-    platformcombo.Visible := False;
-     if (Showmodal <> mrCancel) then
-      begin
-       if Edit1.Text = '' then
-       NConfig.DeleteKey(FGameData[FFilteredIndices[ListView1.ItemIndex]].Platforms,
-         FGameData[FFilteredIndices[ListView1.ItemIndex]].ID)
-       else
-       NConfig.WriteString(FGameData[FFilteredIndices[ListView1.ItemIndex]].Platforms,
-         FGameData[FFilteredIndices[ListView1.ItemIndex]].ID, Edit1.Text);
-       NConfig.UpdateFile;
-      end;
-   end;
-end;
-
-procedure TSGLMainForm.DesktopShortcut1Click(Sender: TObject);
-begin
-  CreateDesktopShellLink(ExcludeTrailingPathDelimiter(LaunchBoxDir) +'\'+
-  FGameData[FFilteredIndices[ListView1.ItemIndex]].ApplicationPath, ListView1.Selected.Caption);
+  AutoSizeListViewColumns;
 end;
 
 //----TOOLBAR----
@@ -1474,106 +2022,6 @@ begin
   end;
 end;
 
-procedure TSGLMainForm.Splitter3Moved(Sender: TObject);
-var
-  i, Idx, NewH, NewW: Integer;
-  Pnl: TPanel;
-begin
-  if not EnabledMiniatures then Exit;
-
-  NewH := ScrollBox2.Height - GetSystemMetrics(SM_CYHSCROLL) - (PADDING2 * 2) - 8;
-  if NewH < 20 then NewH := 20;
-  // Сохраняем пропорцию 100:74
-  NewW := MulDiv(NewH, 100, 74);
-
-  FThumbWidth := NewW;
-  FThumbHeight := NewH;
-
-  FlowPanel1.Height := FThumbHeight + 8 + (PADDING2 * 2);
-
-  for i := 0 to FlowPanel1.ControlCount - 1 do
-  begin
-    if not (FlowPanel1.Controls[i] is TPanel) then Continue;
-    Pnl := TPanel(FlowPanel1.Controls[i]);
-    Idx := Pnl.Tag;
-    if (Idx >= 0) and (Idx < Length(FAllImageFiles)) then
-      ResizeThumbnail(Pnl, FAllImageFiles[Idx]);
-  end;
-
-  // Пересчитать общую ширину
-  var ThumbW := FThumbWidth + 8 + (PADDING2 * 2);
-  var TotalWidth := FlowPanel1.ControlCount * ThumbW + PADDING2;
-  FlowPanel1.Width := TotalWidth + 30;
-
-  ScrollBox2.HorzScrollBar.Range := FlowPanel1.Width;
-  FlowPanel1.Realign;
-  FlowPanel1.Invalidate;
-end;
-
-procedure TSGLMainForm.pmPlatformFilterPopup(Sender: TObject);
-begin
-  RefreshPlatformFilterMenu;
-end;
-
-procedure TSGLMainForm.PlatformBtnClick(Sender: TObject);
-var
-  AnyChecked: Boolean;
-  i: Integer;
-  ClearAllItem, SelectAllItem: TMenuItem;
-  CurrentTab: string;
-begin
-  if not FLoadingComplete then Exit;
-
-  CurrentTab := TabControl1.Tabs[TabControl1.TabIndex];
-
-  // === Если не на All и не на Installed — ничего не делаем ===
-  if not (SameText(CurrentTab, 'All') or
-          SameText(CurrentTab, 'Installed') or
-          SameText(CurrentTab, 'Favorites')) then
-    Exit;   // ← Выходим, ничего не выполняем
-
-  // === Дальше — только для вкладок All и Installed ===
-  RefreshPlatformFilterMenu;
-
-  AnyChecked := False;
-
-  // Проверяем состояние чекбоксов
-  for i := 0 to pmPlatformFilter.Items.Count - 1 do
-  begin
-    if (pmPlatformFilter.Items[i].Hint <> '') and
-       pmPlatformFilter.Items[i].Checked then
-    begin
-      AnyChecked := True;
-      Break;
-    end;
-  end;
-
-  // Находим пункты Select All и Clear All
-  ClearAllItem := nil;
-  SelectAllItem := nil;
-  for i := 0 to pmPlatformFilter.Items.Count - 1 do
-  begin
-    if pmPlatformFilter.Items[i].Tag = 1 then
-      SelectAllItem := pmPlatformFilter.Items[i]
-    else if pmPlatformFilter.Items[i].Tag = 2 then
-      ClearAllItem := pmPlatformFilter.Items[i];
-  end;
-
-  // Выполняем действие
-  if AnyChecked then
-  begin
-    if Assigned(ClearAllItem) then
-      PlatformFilterMenuClick(ClearAllItem);
-  end
-  else
-  begin
-    if Assigned(SelectAllItem) then
-      PlatformFilterMenuClick(SelectAllItem);
-  end;
-
-  AutoSizeListViewColumns;
-end;
-
 //------------------------------------------------------------------------------
 // Переключение фильтр по информационным лейблам
 procedure TSGLMainForm.ApplyLabelFilter(const Category: string; const Value: string);
@@ -1744,7 +2192,407 @@ if Sender is TLabel then
     TLabel(Sender).Font.Style := TLabel(Sender).Font.Style - [fsUnderline];
 end;
 
-procedure TSGLMainForm.Download1Click(Sender: TObject);
+//----MENUEXTRAS----
+//------------------------------------------------------------------------------
+procedure TSGLMainForm.OnExtrasMenuItemClick(Sender: TObject);
+var
+  MenuItem: TMenuItem;
+  FullPath: string;
+begin
+  if Sender is TMenuItem then
+  begin
+    MenuItem := TMenuItem(Sender);
+    FullPath := MenuItem.Hint;
+    ShellOpen(FullPath);
+  end;
+end;
+
+// TrayPopupActionBar
+//-----------------------------------------------------------------------------
+procedure TSGLMainForm.ExitMenuItemClick(Sender: TObject);
+begin
+  Close;
+end;
+
+procedure TSGLMainForm.AboutMenuItemClick(Sender: TObject);
+begin
+  with HelpForm do
+   begin
+     Position := poDesktopCenter;
+     Label2.Caption := 'ReleaseDate: ' + sReleaseDate;
+     HELPFORM_PAGECTRL1.ActivePageIndex := 0;
+     Show;
+   end;
+end;
+
+procedure TSGLMainForm.AutostartMenuItemClick(Sender: TObject);
+begin
+  with Sender as TMenuItem do
+   begin
+    Checked := not Checked;
+    ToggleSelfInStartupFolder(Checked);
+   end;
+end;
+
+procedure TSGLMainForm.HideonstartupMenuItemClick(Sender: TObject);
+begin
+  with Sender as TMenuItem do
+   begin
+    Checked := not Checked;
+    FConfig.WriteBool('SGAllSettings', 'HideInTray', Checked);
+    FConfig.UpdateFile;
+   end;
+end;
+
+procedure TSGLMainForm.MultilinetabsMenuItemClick(Sender: TObject);
+begin
+ with Sender as TMenuItem do
+   begin
+    Checked := not Checked;
+    TabControl1.MultiLine := Checked;
+    if Checked then TabControl1.TabWidth := 0;
+    Resize;
+    FConfig.WriteBool('SGAllSettings', 'MultiLineTab', Checked);
+    FConfig.UpdateFile;
+   end;
+end;
+
+procedure TSGLMainForm.ViewasThumbnailsMenuItemClick(Sender: TObject);
+begin
+with Sender as TMenuItem do
+ begin
+   Checked := not Checked;
+   if Checked then
+   begin
+    if ViewasListMenuItem.Checked then
+    begin
+      ViewasListMenuItem.Checked := False;
+      FViewAsList := False;
+      FConfig.WriteBool('SGAllSettings', 'ViewAsList', False);
+    end;
+
+    ListView1.ViewStyle := vsIcon;
+
+    // 1) Отвязываем старый ImageList (от list-режима — он «широкий»)
+    ListView1.LargeImages := nil;
+
+    // 2) Пересоздаём с размерами плиток
+    FreeAndNil(FListItemHeightImages);
+    FListItemHeightImages := TImageList.Create(Self);
+    FListItemHeightImages.Width  := FConfig.ReadInteger('SGAllSettings', 'TileWidth', 125);
+    FListItemHeightImages.Height := FConfig.ReadInteger('SGAllSettings', 'TileHeight', 100);
+
+    // 3) Привязываем
+    ListView1.LargeImages := FListItemHeightImages;
+    ListView1.OnAdvancedCustomDrawItem := ListView1AdvancedCustomDrawItem;
+    ShowImageonHoverMenuItem.Enabled := True;
+
+    // 4) Сбрасываем унаследованный от list-режима спейсинг —
+    //    теперь ListView сам подберёт отступы под размер плитки
+    ListView1.Perform(LVM_SETICONSPACING, 0, MAKELPARAM(-1, -1));
+    ListView1.Invalidate;
+   end else
+   begin
+    ListView1.ViewStyle := vsReport;
+    ListView1.OnAdvancedCustomDrawItem := nil;
+    ShowImageonHoverMenuItem.Enabled := False;
+
+    // 1. Отменяем запрос, который поток мог как раз обрабатывать
+    FHoverLock.Enter;
+    try
+      FHoverPendingIndex := -1;
+      FHoverQueuedID := '';
+    finally
+      FHoverLock.Leave;
+    end;
+
+    // 2. Останавливаем dwell-таймер (иначе может сработать уже после переключения)
+    FHoverDwellTimer.Enabled := False;
+    FHoverDwellID    := '';
+    FHoverDwellIndex := -1;
+
+    // 3. Освобождаем текущее превью-изображение
+    FHoverBitmapID := '';
+    FHoverBitmap.Width := 0;
+
+    // 4. Очищаем кэши путей — в Report-режиме они не нужны,
+    //    а на большой библиотеке съедают заметный объём памяти
+    FHoverPathCache.Clear;
+    FHoverNotFoundCache.Clear;
+   end;
+
+   ListView1.Invalidate; // OwnerData сам перезапросит Caption/SubItems через OnData
+
+   FConfig.WriteBool('SGAllSettings', 'ViewAsIcons', Checked);
+   FConfig.UpdateFile;
+ end;
+end;
+
+procedure TSGLMainForm.ViewasListMenuItemClick(Sender: TObject);
+begin
+with Sender as TMenuItem do
+  begin
+    Checked := not Checked;
+    FViewAsList := Checked;
+
+    if Checked then
+    begin
+      if ViewasThumbnailsMenuItem.Checked then
+      begin
+        ViewasThumbnailsMenuItem.Checked := False;
+        FConfig.WriteBool('SGAllSettings', 'ViewAsIcons', False);
+      end;
+
+            // 1) Отвязываем
+      ListView1.LargeImages := nil;
+      ListView1.ViewStyle   := vsIcon;
+
+      // 2) Пересоздаём ImageList с размерами list-режима
+      FreeAndNil(FListItemHeightImages);
+      FListItemHeightImages := TImageList.Create(Self);
+      FListItemHeightImages.Width  := 100;
+      FListItemHeightImages.Height := 50;
+
+      // 3) Привязываем
+      ListView1.LargeImages := FListItemHeightImages;
+      ListView1.OnAdvancedCustomDrawItem := ListView1AdvancedCustomDrawItem;
+      ShowImageonHoverMenuItem.Enabled := True;
+
+      // 4) Устанавливаем «списочный» отступ
+      ListView1.Invalidate;
+      ResizeListViewTiles(0);
+
+      // Ключевое: заставляем ListView не перекрашивать tile-background поверх нашей отрисовки
+      ListView1.ControlStyle := ListView1.ControlStyle + [csOpaque];
+    end
+    else
+    begin
+      ListView1.ViewStyle := vsReport;
+      ListView1.OnAdvancedCustomDrawItem := nil;
+      ShowImageonHoverMenuItem.Enabled := False;
+
+      // Сброс hover-состояния (как в ViewAsThumbnails1Click)
+      FHoverLock.Enter;
+      try
+        FHoverPendingIndex := -1;
+        FHoverQueuedID     := '';
+      finally
+        FHoverLock.Leave;
+      end;
+      FHoverDwellTimer.Enabled := False;
+      FHoverDwellID    := '';
+      FHoverDwellIndex := -1;
+      FHoverBitmapID   := '';
+      FHoverBitmap.Width := 0;
+      FHoverPathCache.Clear;
+      FHoverNotFoundCache.Clear;
+    end;
+
+    ListView1.Invalidate;
+    FConfig.WriteBool('SGAllSettings', 'ViewAsList', Checked);
+    FConfig.UpdateFile;
+  end;
+end;
+
+procedure TSGLMainForm.ShowImageonHoverMenuItemClick(Sender: TObject);
+begin
+  FShowImageOnHover := not FShowImageOnHover;
+  ShowImageonHoverMenuItem.Checked := FShowImageOnHover;
+  FConfig.WriteBool('SGAllSettings', 'ShowImageOnHover', FShowImageOnHover);
+  FConfig.UpdateFile;
+
+  if not FShowImageOnHover then
+  begin
+    // Аннулируем ожидающие запросы к потоку
+    FHoverLock.Enter;
+    try
+      FHoverPendingIndex := -1;
+      FHoverQueuedID := '';
+    finally
+      FHoverLock.Leave;
+    end;
+
+    // Останавливаем dwell-таймер, чтобы он не сработал после выключения опции
+    FHoverDwellTimer.Enabled := False;
+    FHoverDwellID    := '';
+    FHoverDwellIndex := -1;
+
+    // Сбрасываем уже загруженное превью
+    FHoverBitmapID := '';
+    FHoverBitmap.Width := 0;
+  end;
+
+  // Перерисовываем список
+  ListView1.Invalidate;
+end;
+
+procedure TSGLMainForm.ShowGameDetailsMenuItemClick(Sender: TObject);
+begin
+with Sender as TMenuItem do
+  begin
+   Checked := not Checked;
+    if Checked then
+    begin
+     Panel3.Align := alLeft;
+     Panel3.Width := FConfig.ReadInteger('SGAllSettings', 'ListViewWidth', SGLMainForm.Width div 3);
+     Splitter1.Visible := True;
+     Splitter1.Align := alLeft;
+     Panel1.Visible := True;
+     EnabledimagegalleryMenuItem.Enabled := True;
+    end else
+    begin
+     FConfig.WriteInteger('SGAllSettings', 'ListViewWidth', Panel3.Width);
+     Panel1.Visible := False;
+     Splitter1.Visible := False;
+     Panel3.Align := alClient;
+     EnabledimagegalleryMenuItem.Enabled := False;
+    end;
+   FConfig.WriteBool('SGAllSettings', 'ShowDetailsPanel', Checked);
+   FConfig.UpdateFile;
+
+   if not (csDestroying in ComponentState) then
+     SGLMainForm.Resize;
+  end;
+end;
+
+procedure TSGLMainForm.EnabledimagegalleryMenuItemClick(Sender: TObject);
+begin
+with Sender as TMenuItem do
+   begin
+    Checked := not Checked;
+    FConfig.WriteBool('SGAllSettings', 'Enabled miniatures', Checked);
+    FConfig.UpdateFile;
+   end;
+if MessageDlg('The application needs to restart to apply the changes. Restart now?',
+                mtConfirmation, [mbYes, mbNo], 0) = mrYes then
+ begin
+  RegIni(True);
+  RestartApplication(FClosing);
+ end;
+end;
+
+procedure TSGLMainForm.ToolBarShowMenuItemClick(Sender: TObject);
+begin
+with Sender as TMenuItem do
+   begin
+    Checked := not Checked;
+    ToolBar1.Visible := Checked;
+    FConfig.WriteBool('SGAllSettings', 'ShowToolBar', Checked);
+    FConfig.UpdateFile;
+   end;
+end;
+
+procedure TSGLMainForm.UseBinaryCacheMenuItemClick(Sender: TObject);
+begin
+if not FLoadingComplete then Exit;
+
+with Sender as TMenuItem do
+   begin
+    Checked := not Checked;
+    FConfig.WriteBool('SGAllSettings', 'UseBinaryCache', Checked);
+    FConfig.UpdateFile;
+
+    if Checked = True then
+      FinalizeLoading(True) // включили кэш → пересканировать + перезапустить
+    else
+    begin
+     if MessageDlg('The application needs to restart to apply the changes. Restart now?',
+                mtConfirmation, [mbYes, mbNo], 0) = mrYes then
+      begin
+       RegIni(True);
+       RestartApplication(FClosing);
+      end;
+    end;
+   end;
+end;
+
+procedure TSGLMainForm.EmptyWorkingSetMenuItemClick(Sender: TObject);
+begin
+with Sender as TMenuItem do
+   begin
+    Checked := not Checked;
+    FConfig.WriteBool('SGAllSettings', 'EmptyWorkingSet', Checked);
+    FConfig.UpdateFile;
+   end;
+if MessageDlg('The application needs to restart to apply the changes. Restart now?',
+                mtConfirmation, [mbYes, mbNo], 0) = mrYes then
+ begin
+  RegIni(True);
+  RestartApplication(FClosing);
+ end;
+end;
+
+procedure TSGLMainForm.SpecifyfoldersMenuItemClick(Sender: TObject);
+begin
+ with DiagForm do
+   begin
+    Caption := 'Specify folder';
+    Position := poDesktopCenter;
+    ActiveControl := Edit1;
+    Label2.Caption := 'Changes will take effect after switching tabs.';
+    Button3.Hint := 'Select a dir';
+    ifFile := False;
+    Edit1.Text := FConfig.ReadString('SGAllSettings', 'IgnoreDir', '');
+    DialogDir := LaunchBoxDir;
+    platformcombo.Visible := False;
+     if (Showmodal <> mrCancel) then
+      begin
+       FConfig.WriteString('SGAllSettings', 'IgnoreDir', Edit1.Text);
+       FConfig.UpdateFile;
+       IgnoreDir := Edit1.Text;
+
+       // Обновляем кэшированный список:
+       FIgnoredFolders.Clear;
+       StrToList(IgnoreDir, ';', FIgnoredFolders);
+      end;
+   end;
+end;
+
+procedure TSGLMainForm.SpecifylanguagefoldersMenuItemClick(Sender: TObject);
+begin
+ with DiagForm do
+   begin
+    Caption := 'Specify languages folder';
+    Position := poDesktopCenter;
+    ActiveControl := Edit1;
+    Label2.Caption := 'Changes will take effect after switching tabs.';
+    Button3.Hint := 'Select a dir';
+    ifFile := False;
+    Edit1.Text := FConfig.ReadString('LanguagesPack', 'MS-DOS', '');
+    DialogDir := LaunchBoxDir;
+    platformcombo.Items.Clear;
+    platformcombo.Visible := True;
+    FConfig.ReadSection('LanguagesPack',platformcombo.Items);
+    if platformcombo.Items.Count > 0 then
+      platformcombo.ItemIndex := 0;
+     if (Showmodal <> mrCancel) then
+      begin
+       FConfig.WriteString('LanguagesPack', platformcombo.Items[platformcombo.ItemIndex], Edit1.Text);
+       FConfig.UpdateFile;
+      end;
+   end;
+end;
+
+// ListViewPopupActionBar
+//-----------------------------------------------------------------------------
+procedure TSGLMainForm.RunMenuItemClick(Sender: TObject);
+begin
+  ListView1DblClick(Sender);
+end;
+
+procedure TSGLMainForm.ConfigurationMenuItemClick(Sender: TObject);
+var
+  AppPath, FullPath: string;
+begin
+  if ListView1.ItemIndex <> -1 then
+  begin
+    AppPath := FGameData[FFilteredIndices[ListView1.ItemIndex]].ConfigurationPath;
+    FullPath := TPath.Combine(LaunchBoxDir, AppPath);
+    ShellOpen(FullPath);
+  end;
+end;
+
+procedure TSGLMainForm.DownloadarchiveMenuItemClick(Sender: TObject);
 var
   raw: string;
   langs: TArray<string>;
@@ -1778,11 +2626,11 @@ begin
   end;
 
   // Диалог выбора языка и запуск загрузки
-  if ShowComboDialog(AvailableLangs, selectedLang, 'Выберите язык') then
+  if ShowComboDialog(AvailableLangs, selectedLang, 'Select language') then
     Aria2Download(selectedLang);
 end;
 
-procedure TSGLMainForm.DeleteZIP1Click(Sender: TObject);
+procedure TSGLMainForm.DeletearchiveMenuItemClick(Sender: TObject);
 var
   raw: string;
   langs: TArray<string>;
@@ -1828,6 +2676,65 @@ begin
   end;
 end;
 
-//-----------------------------------------------------------------------------
+procedure TSGLMainForm.AddtoFavoritesMenuItemClick(Sender: TObject);
+var
+  RealIndex, CurIndex: Integer;
+begin
+  if ListView1.ItemIndex = -1 then Exit;
+
+  CurIndex := ListView1.ItemIndex;
+  RealIndex := FFilteredIndices[CurIndex];
+  ToggleFavorite(FGameData[RealIndex].ID);
+
+  if SameText(TabControl1.Tabs[TabControl1.TabIndex], 'Favorites') then
+    RemoveFilteredIndexFromView(CurIndex)
+  else
+    ListView1.Invalidate;
+end;
+
+procedure TSGLMainForm.ManualMenuItemClick(Sender: TObject);
+var
+  AppPath, FullPath: string;
+begin
+  if ListView1.ItemIndex <> -1 then
+  begin
+    AppPath := FGameData[FFilteredIndices[ListView1.ItemIndex]].Manual;
+    FullPath := TPath.Combine(LaunchBoxDir, AppPath);
+    ShellOpen(FullPath);
+  end;
+end;
+
+procedure TSGLMainForm.CreatedesktopshortcutMenuItemClick(Sender: TObject);
+begin
+  CreateDesktopShellLink(ExcludeTrailingPathDelimiter(LaunchBoxDir) +'\'+
+  FGameData[FFilteredIndices[ListView1.ItemIndex]].ApplicationPath, FGameData[FFilteredIndices[ListView1.ItemIndex]].GameName);
+end;
+
+procedure TSGLMainForm.CustomimagenameMenuItemClick(Sender: TObject);
+begin
+ with DiagForm do
+   begin
+    Caption := FGameData[FFilteredIndices[ListView1.ItemIndex]].GameName;
+    Position := poDesktopCenter;
+    ActiveControl := Edit1;
+    Label2.Caption := 'Example: Tomb Raider Gold-01.jpg > Tomb Raider Gold';
+    Button3.Hint := 'Select an image';
+    ifFile := True;
+    Edit1.Text := NConfig.ReadString(FGameData[FFilteredIndices[ListView1.ItemIndex]].Platforms,
+      FGameData[FFilteredIndices[ListView1.ItemIndex]].ID, '');
+    DialogDir := LaunchBoxDir + '\Images\' + FGameData[FFilteredIndices[ListView1.ItemIndex]].Platforms;
+    platformcombo.Visible := False;
+     if (Showmodal <> mrCancel) then
+      begin
+       if Edit1.Text = '' then
+       NConfig.DeleteKey(FGameData[FFilteredIndices[ListView1.ItemIndex]].Platforms,
+         FGameData[FFilteredIndices[ListView1.ItemIndex]].ID)
+       else
+       NConfig.WriteString(FGameData[FFilteredIndices[ListView1.ItemIndex]].Platforms,
+         FGameData[FFilteredIndices[ListView1.ItemIndex]].ID, Edit1.Text);
+       NConfig.UpdateFile;
+      end;
+   end;
+end;
 
 end.

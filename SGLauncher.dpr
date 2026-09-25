@@ -18,7 +18,8 @@ uses
   GamesCore in 'GamesCore.pas',
   SystemUtils in 'SystemUtils.pas',
   ToolBars in 'ToolBars.pas',
-  Aria2Thread in 'Aria2Thread.pas';
+  Aria2Thread in 'Aria2Thread.pas',
+  XMLLiteCore in 'XMLLiteCore.pas';
 
 {$R *.res}
 {$SETPEFLAGS IMAGE_FILE_RELOCS_STRIPPED} //Удаление из exe таблицы релокаций.
