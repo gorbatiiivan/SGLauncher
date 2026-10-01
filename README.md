@@ -2,7 +2,7 @@
 Lightweight launcher for eXo collections.
 
 
- * Supports All eXo Collections & LaunchBox Games.
+ * Supports All eXo Collections & LaunchBox Games(DOSBox games configured in LaunchBox are not supported).
  * Create Your Own Lite Version of Any eXo Project.
  * Theme Support & UI Customization.
  * SGLauncher is fully portable without need of installing system dependencies.
