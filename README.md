@@ -7,6 +7,7 @@ Lightweight launcher for eXo collections.
  * Theme Support & UI Customization.
  * SGLauncher is fully portable without need of installing system dependencies.
  * User interface is fast and light on resources, even with large libraries.
+ * Pure Pascal UI — No Web Technologies.
 
 
 
