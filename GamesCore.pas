@@ -6,8 +6,8 @@ uses
   Unit1, SystemUtils, FullScreenImage, Winapi.Windows, Winapi.Messages, System.SysUtils,
   System.Types, System.IOUtils, Vcl.Graphics, Vcl.Controls, Vcl.Forms, System.Classes,
   Vcl.Dialogs, Vcl.ComCtrls, Vcl.ExtCtrls, Vcl.ImgList, SyncObjs, PsAPI,
-  Vcl.Imaging.jpeg, Vcl.Imaging.pngimage, Vcl.Imaging.GIFImg,
-  Math, ActiveX, ShellAPI, Vcl.Menus, ShlObj, StrUtils,
+  Vcl.Imaging.jpeg, Vcl.Imaging.pngimage, Vcl.Imaging.GIFImg, Vcl.TabView,
+  Math, ActiveX, ShellAPI, Vcl.Menus, ShlObj, StrUtils,  Winapi.CommCtrl,
   System.Generics.Collections, System.Generics.Defaults;
 
 type
@@ -38,11 +38,14 @@ type
     procedure StartImageLoadThread(ItemIndex, RealIndex: Integer);
     procedure FindGameImages(const Platforms, GameName, ReleaseDate, ID,
               ForcedName: string; ImageList: TStringList);
+    function GetPlatformImageFiles(const Platform: string): TStringDynArray;
     procedure DoProcessPendingTabChange(Sender: TObject);
     procedure PerformTabChange(NewTabIndex: Integer);
     procedure SetupListViewColumns;
     procedure AutoSizeListViewColumns;
     procedure SelectionTimerTimer(Sender: TObject);
+    // Кэш распарсенных LanguagesPack по платформам
+    function GetLanguagesPack(const Platform: string): TStringList;
     //Для миниатюр
     procedure CreateThumbnails;
     procedure ThumbnailClick(Sender: TObject);
@@ -84,14 +87,36 @@ type
     procedure RequestHoverImage(RealIndex: Integer);
     function  GetHoverQueuedID: string;
     procedure ProcessHoverRequest(RealIndex: Integer);
-    function LoadScaledHoverBitmapWIC(const FilePath: string): TBitmap;
-    function  LoadScaledHoverBitmap(const FilePath: string): TBitmap;
+    function LoadScaledHoverBitmapWIC(const FilePath: string; MaxSideOverride: Integer = 0): TBitmap;
+    function  LoadScaledHoverBitmap(const FilePath: string; MaxSideOverride: Integer = 0): TBitmap;
     procedure HoverDwellTimerTimer(Sender: TObject);
+    // Запуск игры (обычный exe или через эмулятор)
+    procedure LaunchGame(const RealIndex: Integer);
+    // Загрузка эмуляторов из Data\Emulators.xml
+    procedure LoadEmulatorsXML;
+    // Миниатюры видимых элементов ListView
+    function FindTileImage(const Platforms, GameName, ReleaseYear, ID, ForcedName: string): string;
+    function GetTileBitmap(ItemIndex, RealIndex: Integer): TBitmap;
+    procedure StartTileLoadThread;
+    procedure TileLoadThreadProc;
+    procedure ProcessTileRequest(const Req: TTileRequest; Gen: Integer);
+    procedure TrimTileCache;
+    procedure ClearTileCache;
   end;
 
 implementation
 
 uses Aria2Thread, XMLLiteCore;
+
+function TabViewIndexOfCaption(ATabs: TTabViewTabs; const ACaption: string): Integer;
+var
+  i: Integer;
+begin
+  Result := -1;
+  for i := 0 to ATabs.Count - 1 do
+    if SameText(ATabs[i].Caption, ACaption) then
+      Exit(i);
+end;
 
 // Вспомогательная процедура
 procedure TSGLMainFormHelper.CanvasTextShadowBorder(Canvas: TCanvas; const Text: string; R: TRect;
@@ -215,33 +240,18 @@ var
   CleanRelPath, FullPath, FullDir: string;
   Paths: TArray<string>;
   I: Integer;
-  OwnLP: TStringList;
-  ActiveLP: TStringList;  // то, что реально используем
+  ActiveLP: TStringList;
 begin
   Result := False;
   if Trim(G.ApplicationPath) = '' then Exit;
 
-  OwnLP := nil;
-  ActiveLP := LanguagesPack;  // по умолчанию — то, что передали
+  if Assigned(LanguagesPack) then
+    ActiveLP := LanguagesPack
+  else
+    ActiveLP := GetLanguagesPack(G.Platforms);
 
-  // Если не передали — создаём свой из конфига
-  if not Assigned(ActiveLP) then
-  begin
-    OwnLP := TStringList.Create;
-    OwnLP.Delimiter := ';';
-    OwnLP.StrictDelimiter := True;
-    OwnLP.DelimitedText := SGLMainForm.FConfig.ReadString('LanguagesPack', G.Platforms, '');
-    ActiveLP := OwnLP;
-  end;
-
-  try
-    // Одна ветка вместо двух — NormalizeLaunchBoxPath сама обработает пустой список
-    CleanRelPath := NormalizeLaunchBoxPath(G.ApplicationPath,
-      FIgnoredFolders, ActiveLP);
-  finally
-    OwnLP.Free;  // nil.Free безопасен, но теперь OwnLP реально может быть создан
-  end;
-
+  // NormalizeLaunchBoxPath корректно работает с nil (HasLanguages = False)
+  CleanRelPath := NormalizeLaunchBoxPath(G.ApplicationPath, FIgnoredFolders, ActiveLP);
   if CleanRelPath = '' then Exit;
 
   Paths := CleanRelPath.Split(['|']);
@@ -249,7 +259,7 @@ begin
   begin
     if Trim(Paths[I]) = '' then Continue;
     FullPath := TPath.GetFullPath(TPath.Combine(LaunchBoxDir, Paths[I]));
-    FullDir := ExtractFileDir(FullPath);
+    FullDir  := ExtractFileDir(FullPath);
     if DirectoryExists(FullDir) or FileExists(FullPath) then
     begin
       Result := True;
@@ -281,6 +291,8 @@ begin
       if G.ConfigurationPath <> '' then FGameData[ExistingIndex].ConfigurationPath := G.ConfigurationPath;
       if G.CommandLine <> '' then FGameData[ExistingIndex].CommandLine := G.CommandLine;
       if G.PlayMode <> '' then FGameData[ExistingIndex].PlayMode := G.PlayMode;
+      if G.ConfigurationCommandLine <> '' then FGameData[ExistingIndex].ConfigurationCommandLine := G.ConfigurationCommandLine;
+      if G.Emulator <> '' then FGameData[ExistingIndex].Emulator := G.Emulator;
     end
     else
     begin
@@ -741,14 +753,14 @@ var
   PlatformFilterActive: Boolean;
   GamePlatforms: string;
 begin
-  if TabControl1.TabIndex < 0 then Exit;
+  if TabView1.TabIndex < 0 then Exit;
 
   SL := TStringList.Create;
   try
     SL.Sorted := True;
     SL.Duplicates := dupIgnore;
 
-    SelectedPlatform := TabControl1.Tabs[TabControl1.TabIndex];
+    SelectedPlatform := TabView1.Tabs[TabView1.TabIndex].Caption;
     IsAllTab := SameText(SelectedPlatform, 'All');
     IsInstalledTab := SameText(SelectedPlatform, 'Installed');
     IsFavoritesTab := SameText(SelectedPlatform, 'Favorites');
@@ -839,6 +851,7 @@ procedure TSGLMainFormHelper.InitializePlatformTabs;
 var
   i: Integer;
   Platforms: TStringList;
+  LTab: TTabViewTab;
 begin
   Platforms := TStringList.Create;
   try
@@ -852,18 +865,25 @@ begin
          (FGameData[i].Platforms <> 'Favorites') then
         Platforms.Add(FGameData[i].Platforms);
 
-    TabControl1.Tabs.Clear;
-    TabControl1.Tabs.Add('All');
-    TabControl1.Tabs.Add('Installed');
-    TabControl1.Tabs.Add('Favorites');
+    TabView1.Tabs.Clear;
+    LTab := TTabViewTab(TabView1.Tabs.Add);
+    LTab.Caption := 'All';
+    LTab := TTabViewTab(TabView1.Tabs.Add);
+    LTab.Caption := 'Installed';
+    LTab := TTabViewTab(TabView1.Tabs.Add);
+    LTab.Caption := 'Favorites';
     for i := 0 to Platforms.Count - 1 do
-      TabControl1.Tabs.Add(Platforms[i]);
-    TabControl1.TabIndex := 0;
+    begin
+      LTab := TTabViewTab(TabView1.Tabs.Add);
+      LTab.Caption := Platforms[i];
+    end;
 
-    FillGenreSeriesCombo('All');
   finally
     Platforms.Free;
   end;
+
+  // === ЗЕРКАЛО: перестраиваем NavigationView1 под только что созданные вкладки ===
+  SyncNavigationViewFromTabView;
 end;
 
 procedure TSGLMainFormHelper.FinalizeLoading(ADeleteCache: Boolean = False);
@@ -967,22 +987,28 @@ begin
             UpdateLanguagesPackFromGames;
 
             SavedTab := FConfig.ReadString('SGAllSettings', 'LastTab', 'All');
-            TabIdx := TabControl1.Tabs.IndexOf(SavedTab);
-            if TabIdx < 0 then TabIdx := TabControl1.Tabs.IndexOf('All');
+            TabIdx := TabViewIndexOfCaption(TabView1.Tabs, SavedTab);
+            if TabIdx < 0 then TabIdx := TabViewIndexOfCaption(TabView1.Tabs, 'All');
             if TabIdx < 0 then TabIdx := 0;
-            TabControl1.TabIndex := TabIdx;
+            TabView1.TabIndex := TabIdx;
+            SyncNavViewSelection;
+            TabView1.Invalidate;
+            TabView1.Update;
 
             SendMessage(ListView1.Handle, WM_SETREDRAW, WPARAM(False), 0);
             try
               SetupListViewColumns;
               UpdateGenreSeriesComboForCurrentPlatform;
               ApplyFilters;
+              TabView1.TabIndex := TabIdx;
               ListView1.Items.Count := Length(FFilteredIndices);
               AutoSizeListViewColumns;
             finally
               SendMessage(ListView1.Handle, WM_SETREDRAW, WPARAM(True), 0);
               RedrawWindow(ListView1.Handle, nil, 0,
                 RDW_ERASE or RDW_FRAME or RDW_INVALIDATE or RDW_ALLCHILDREN);
+              TabView1.Invalidate;
+              TabView1.Update;
             end;
 
             if FConfig.ReadBool('SGAllSettings', 'EmptyWorkingSet', False) then
@@ -992,7 +1018,7 @@ begin
                 SetProcessWorkingSetSize(GetCurrentProcess, SIZE_T(-1), SIZE_T(-1));
               end;
 
-            Caption := Format('%s %d', [TabControl1.Tabs[TabControl1.TabIndex] + ' - ', Length(FFilteredIndices)]);
+            Caption := Format('%s %d', [TabView1.Tabs[TabView1.TabIndex].Caption + ' - ', Length(FFilteredIndices)]);
             if Length(FGameData) <> Length(FFilteredIndices) then
               Caption := Caption + Format(' / %d', [Length(FGameData)]);
             TrayIcon.Hint := Caption;
@@ -1065,7 +1091,7 @@ var
 begin
   if not FLoadingComplete then Exit;
 
-  SelectedPlatform := TabControl1.Tabs[TabControl1.TabIndex];
+  SelectedPlatform := TabView1.Tabs[TabView1.TabIndex].Caption;
   Count := 0;
   SetLength(FFilteredIndices, Length(FGameData));
 
@@ -1201,7 +1227,7 @@ procedure TSGLMainFormHelper.UpdateGenreSeriesComboForCurrentPlatform;
 begin
   if not FLoadingComplete or FClosing or (csDestroying in ComponentState) then Exit;
 
-  FillGenreSeriesCombo(TabControl1.Tabs[TabControl1.TabIndex]);
+  FillGenreSeriesCombo(TabView1.Tabs[TabView1.TabIndex].Caption);
 end;
 
 procedure TSGLMainFormHelper.ShowGameByIndex(const ItemIndex: Integer);
@@ -1468,15 +1494,11 @@ end;
 
 procedure TSGLMainFormHelper.FindGameImages(const Platforms, GameName, ReleaseDate, ID, ForcedName: string; ImageList: TStringList);
 var
-  PlatformDir: string;                 // Папка платформы LaunchBox (например Images\PC)
-  Year: string;                        // Год игры
-  BaseNameNoYear: string;              // Имя игры без года
-  BaseNameWithYear: string;            // Имя игры + (год)
-  BaseNameWithYearNoSpace: string;     // Имя игры +(год) без пробела
-  PriorityFolders: TArray<string>;     // Приоритетные папки поиска
-  ExcludedFolders: TArray<string>;     // Исключаемые папки поиска
+  PlatformDir: string;
+  PlatformFiles: TStringDynArray;
+  Year, BaseNameNoYear, BaseNameWithYear, BaseNameWithYearNoSpace: string;
+  PriorityFolders, ExcludedFolders: TArray<string>;
   Folder: string;
-  Files: TStringDynArray;
   FilePath, FileName: string;
 
   function OneLine(const s: string): string;
@@ -1555,41 +1577,35 @@ var
     Result := False;
   end;
 
+  function MatchesName(const FileName: string): Boolean;
+  begin
+    if ForcedName <> '' then
+      Result := SameText(FileName, ForcedName) or
+                StartsText(ForcedName + '-', FileName) or
+                MatchForcedNumberedName(FileName, ForcedName)
+    else
+      Result := IsValidMatch(FileName, BaseNameNoYear) or
+                ((BaseNameWithYear <> '')        and IsValidMatch(FileName, BaseNameWithYear)) or
+                ((BaseNameWithYearNoSpace <> '') and IsValidMatch(FileName, BaseNameWithYearNoSpace));
+  end;
+
   procedure TryAddFromFolder(const BaseFolder: string);
   var
-    SearchPath: string;
+    Prefix: string;
     j: Integer;
   begin
-    SearchPath := IncludeTrailingPathDelimiter(PlatformDir) + BaseFolder;
-    if not TDirectory.Exists(SearchPath) then Exit;
+    Prefix := IncludeTrailingPathDelimiter(PlatformDir) +
+              IncludeTrailingPathDelimiter(BaseFolder);
 
-    Files := TDirectory.GetFiles(SearchPath, '*.*', TSearchOption.soAllDirectories);
-
-    for j := 0 to High(Files) do
+    for j := 0 to High(PlatformFiles) do
     begin
       if TThread.CurrentThread.CheckTerminated then Exit;
+      FilePath := PlatformFiles[j];
+      if not StartsText(Prefix, FilePath) then Continue;
 
-      FilePath := Files[j];
       FileName := OneLine(TPath.GetFileNameWithoutExtension(FilePath));
-
-      if ForcedName <> '' then
-      begin
-        if SameText(FileName, ForcedName) or
-           StartsText(ForcedName + '-', FileName) or
-           MatchForcedNumberedName(FileName, ForcedName) then
-        begin
-          ImageList.Add(FilePath);
-        end;
-      end
-      else
-      begin
-        if IsValidMatch(FileName, BaseNameNoYear) or
-           ((BaseNameWithYear <> '') and IsValidMatch(FileName, BaseNameWithYear)) or
-           ((BaseNameWithYearNoSpace <> '') and IsValidMatch(FileName, BaseNameWithYearNoSpace)) then
-        begin
-          ImageList.Add(FilePath);
-        end;
-      end;
+      if MatchesName(FileName) then
+        ImageList.Add(FilePath);
     end;
   end;
 
@@ -1598,75 +1614,51 @@ begin
   ImageList.Clear;
 
   // путь к папке платформы
-  PlatformDir := IncludeTrailingPathDelimiter(LaunchBoxDir) +
-                 'Images\' + Platforms;
+  PlatformDir := IncludeTrailingPathDelimiter(LaunchBoxDir) + 'Images\' + Platforms;
 
-  // если папка платформы не существует — выход
-  if not TDirectory.Exists(PlatformDir) then Exit;
+  // Единственное чтение с диска — и только при первом обращении к платформе
+  PlatformFiles := GetPlatformImageFiles(Platforms);
+  if Length(PlatformFiles) = 0 then Exit;
 
-  // получаем год из даты релиза
-  Year := ReleaseDate;
-
-  // базовое имя игры
-  BaseNameNoYear := OneLine(GameName);
-
-  BaseNameWithYear := '';
+  Year                    := ReleaseDate;
+  BaseNameNoYear          := OneLine(GameName);
+  BaseNameWithYear        := '';
   BaseNameWithYearNoSpace := '';
 
-  // формируем варианты имени с годом
   if Year <> '' then
   begin
-    BaseNameWithYear := OneLine(GameName + ' (' + Year + ')');
+    BaseNameWithYear        := OneLine(GameName + ' (' + Year + ')');
     BaseNameWithYearNoSpace := OneLine(GameName + '(' + Year + ')');
   end;
 
-  // -------------------------------------------------
-  // ПРИОРИТЕТНЫЕ ПАПКИ LaunchBox
-  // -------------------------------------------------
   PriorityFolders := [
     'Screenshot - Gameplay',
-    //'Screenshot - Game Title',
     'Box - Front',
     'Box - Back',
     'Disc'
   ];
+  ExcludedFolders := ['Screenshot - Game Title'];
 
-  // -------------------------------------------------
-  // ИСКЛЮЧАЕМЫЕ ПАПКИ LaunchBox
-  // -------------------------------------------------
-  ExcludedFolders := [
-    'Screenshot - Game Title'
-  ];
-
-  // Сначала ищем только в этих папках
+  // Проход 1: приоритетные папки — фильтр по префиксу, без диска
   for Folder in PriorityFolders do
     TryAddFromFolder(Folder);
 
-  // -------------------------------------------------
-  // Если нашли мало изображений — ищем везде
-  // -------------------------------------------------
+  // Проход 2: если мало — проходим по всему кэшу
   if ImageList.Count < 2 then
   begin
-    var AllFiles := TDirectory.GetFiles(
-      PlatformDir,'*.*',TSearchOption.soAllDirectories);
-
-    for FilePath in AllFiles do
+    for FilePath in PlatformFiles do
     begin
       if TThread.CurrentThread.CheckTerminated or FClosing then Exit;
 
-      // пропускаем уже обработанные папки
       var InPriority := False;
-
       for Folder in PriorityFolders do
-        if Pos(IncludeTrailingPathDelimiter(Folder),FilePath) > 0 then
+        if Pos(IncludeTrailingPathDelimiter(Folder), FilePath) > 0 then
         begin
           InPriority := True;
           Break;
         end;
-
       if InPriority then Continue;
 
-      // исключаем ненужные папки
       var IsExcluded := False;
       for Folder in ExcludedFolders do
         if Pos(IncludeTrailingPathDelimiter(Folder), FilePath) > 0 then
@@ -1677,38 +1669,44 @@ begin
       if IsExcluded then Continue;
 
       FileName := OneLine(TPath.GetFileNameWithoutExtension(FilePath));
-
-      if ForcedName <> '' then
-      begin
-        if SameText(FileName, ForcedName) or
-           StartsText(ForcedName + '-', FileName) or
-           MatchForcedNumberedName(FileName, ForcedName) then
-          ImageList.Add(FilePath);
-      end
-      else
-      begin
-        if IsValidMatch(FileName, BaseNameNoYear) or
-           ((BaseNameWithYear <> '') and IsValidMatch(FileName, BaseNameWithYear)) or
-           ((BaseNameWithYearNoSpace <> '') and IsValidMatch(FileName, BaseNameWithYearNoSpace)) then
-          ImageList.Add(FilePath);
-      end;
+      if MatchesName(FileName) then
+        ImageList.Add(FilePath);
     end;
   end;
 
-  // -------------------------------------------------
-  // Если ничего не нашли — ищем по GUID (ID игры)
-  // -------------------------------------------------
+  // Проход 3: fallback по GUID
   if (ImageList.Count = 0) and (ID <> '') then
   begin
-    BaseNameNoYear := OneLine(ID);
-
-    BaseNameWithYear := '';
+    BaseNameNoYear          := OneLine(ID);
+    BaseNameWithYear        := '';
     BaseNameWithYearNoSpace := '';
 
     for Folder in PriorityFolders do
       TryAddFromFolder(Folder);
   end;
+end;
 
+function TSGLMainFormHelper.GetPlatformImageFiles(const Platform: string): TStringDynArray;
+var
+  PlatformDir: string;
+begin
+  Result := nil;
+  if (Platform = '') or not Assigned(FImageFileCache) then Exit;
+
+  FImageFileCacheLock.Enter;
+  try
+    if not FImageFileCache.TryGetValue(Platform, Result) then
+    begin
+      PlatformDir := IncludeTrailingPathDelimiter(LaunchBoxDir) + 'Images\' + Platform;
+      if TDirectory.Exists(PlatformDir) then
+        Result := TDirectory.GetFiles(PlatformDir, '*.*', TSearchOption.soAllDirectories)
+      else
+        Result := nil;
+      FImageFileCache.Add(Platform, Result);
+    end;
+  finally
+    FImageFileCacheLock.Leave;
+  end;
 end;
 
 procedure TSGLMainFormHelper.ScanXMLFromDir(const Dir: string);
@@ -1816,6 +1814,8 @@ begin
       G.CommandLine       := Trim(GetField('CommandLine'));
       G.PlayMode          := Trim(GetField('PlayMode'));
       G.Source            := Trim(GetField('Source'));
+      G.ConfigurationCommandLine := Trim(GetField('ConfigurationCommandLine'));
+      G.Emulator          := Trim(GetField('Emulator'));
 
       if G.Platforms = '' then
         G.Platforms := PlatformFromFile;
@@ -1919,19 +1919,18 @@ end;
 procedure TSGLMainFormHelper.RefreshInstalledStatus;
 var
   i: Integer;
-  SharedLP: TStringList;
 begin
   if not FLoadingComplete then Exit;
   if FActualGameCount = 0 then Exit;
-
-  // Проверяем, не отменена ли операция
   if FClosing or (csDestroying in ComponentState) then Exit;
 
   for i := 0 to FActualGameCount - 1 do
-   begin
+  begin
     if FClosing or (csDestroying in ComponentState) then Exit;
     FGameData[i].IsInstalled := IsGameInstalled(FGameData[i], nil);
-   end;
+  end;
+
+  FLastInstalledRefresh := Now;
 end;
 
 procedure TSGLMainFormHelper.DoProcessPendingTabChange(Sender: TObject);
@@ -1960,6 +1959,8 @@ var
   SavedCategory: Integer;
 begin
   if not FLoadingComplete or (csDestroying in ComponentState) then Exit;
+  if (NewTabIndex < 0) or (NewTabIndex >= TabView1.Tabs.Count) then
+    Exit;
 
   SavedCategory := ComboBox1.ItemIndex;  // сохраняем текущую категорию
 
@@ -1981,11 +1982,12 @@ begin
   else
     FreeAndNil(FImageLoadThread);
 
-  if (NewTabIndex < 0) or (NewTabIndex >= TabControl1.Tabs.Count) then
+  if (NewTabIndex < 0) or (NewTabIndex >= TabView1.Tabs.Count) then
     Exit;
 
-  TabControl1.TabIndex := NewTabIndex;
-  SelectedPlatform := TabControl1.Tabs[NewTabIndex];
+  TabView1.TabIndex := NewTabIndex;
+  SyncNavViewSelection;
+  SelectedPlatform := TabView1.Tabs[NewTabIndex].Caption;
 
   // --- Замораживаем отрисовку ListView полностью ---
   SendMessage(ListView1.Handle, WM_SETREDRAW, WPARAM(False), 0);
@@ -1993,59 +1995,109 @@ begin
   try
     ClearGameInfo;
     SetupListViewColumns;
+    ClearTileCache;
+    SetupListViewColumns;
 
     // --- Вкладка "Installed": RefreshInstalledStatus уходит в фон ---
-    if SameText(SelectedPlatform, 'Installed') {or SameText(SelectedPlatform, 'Favorites')} then
+    if SameText(SelectedPlatform, 'Installed') then
     begin
-      // Пока заморожены — выставляем ширины и очищаем список,
-      // чтобы при разморозке всё выглядело правильно сразу
-      ListView1.Items.Count := 0;
+      // 1. Сразу применяем фильтр по уже имеющимся IsInstalled —
+      //    они вычислены при ScanXMLFromDir / прошлом RefreshInstalledStatus
+      ListView1.Items.BeginUpdate;
+      try
+        UpdateGenreSeriesComboForCurrentPlatform;
+        ComboBox1.ItemIndex := SavedCategory;
+        ApplyFilters;
+      finally
+        ListView1.Items.EndUpdate;
+      end;
       AutoSizeListViewColumns;
 
-      // Восстанавливаем рисование ДО запуска фонового потока
+      // 2. Размораживаем — юзер СРАЗУ видит список
       SendMessage(ListView1.Handle, WM_SETREDRAW, WPARAM(True), 0);
       RedrawWindow(ListView1.Handle, nil, 0,
         RDW_ERASE or RDW_FRAME or RDW_INVALIDATE or RDW_ALLCHILDREN);
       RedrawRestored := True;
 
-      TThread.CreateAnonymousThread(
-        procedure
-        begin
-          RefreshInstalledStatus;
+      // 2a. Выделяем первый элемент (если список не пуст)
+      ActiveControl := ListView1;
+      if ListView1.Items.Count > 0 then
+      begin
+        ListView1.ItemIndex := 0;
+        ListView1.Items[0].Selected := True;
+        ListView1.Items[0].MakeVisible(False);
+      end;
 
-          TThread.Queue(nil,
-            procedure
+      // 3. Фоновое обновление — только если данные устарели
+      if (Now - FLastInstalledRefresh) * SecsPerDay >= 10 then
+      begin
+        TThread.CreateAnonymousThread(
+          procedure
+          var
+            LocalChanged: Boolean;
+          begin
+            LocalChanged := False;
+
+            // Собираем изменения локально, не трогая UI
+            for var J := 0 to FActualGameCount - 1 do
             begin
-              if FClosing or (csDestroying in ComponentState) then Exit;
+              if FClosing or TThread.CurrentThread.CheckTerminated then Exit;
 
-              // Снова замораживаем на время обновления данных
-              SendMessage(ListView1.Handle, WM_SETREDRAW, WPARAM(False), 0);
-              try
-                ListView1.Items.BeginUpdate;
-                try
-                  UpdateGenreSeriesComboForCurrentPlatform;
-                  ApplyFilters;
-                finally
-                  ListView1.Items.EndUpdate;
-                end;
-                AutoSizeListViewColumns;
-              finally
-                SendMessage(ListView1.Handle, WM_SETREDRAW, WPARAM(True), 0);
-                RedrawWindow(ListView1.Handle, nil, 0,
-                  RDW_ERASE or RDW_FRAME or RDW_INVALIDATE or RDW_ALLCHILDREN);
-              end;
+              var OldInstalled := FGameData[J].IsInstalled;
+              var NewInstalled := IsGameInstalled(FGameData[J], nil);
 
-              ActiveControl := ListView1;
-              if ListView1.Items.Count > 0 then
+              if NewInstalled <> OldInstalled then
               begin
-                ListView1.ItemIndex := 0;
-                ListView1.Items[0].Selected := True;
-                ListView1.Items[0].MakeVisible(False);
+                FGameData[J].IsInstalled := NewInstalled;
+                LocalChanged := True;
               end;
-            end
-          );
-        end
-      ).Start;
+            end;
+
+            FLastInstalledRefresh := Now;
+
+            // Обновляем UI только если что-то реально изменилось
+            if not LocalChanged then Exit;
+
+            TThread.Queue(nil,
+              procedure
+              begin
+                if FClosing or (csDestroying in ComponentState) then Exit;
+                if not SameText(TabView1.Tabs[TabView1.TabIndex].Caption, 'Installed') then Exit;
+
+                var CurItem := ListView1.ItemIndex;
+
+                SendMessage(ListView1.Handle, WM_SETREDRAW, WPARAM(False), 0);
+                try
+                  ListView1.Items.BeginUpdate;
+                  try
+                    ApplyFilters;
+                  finally
+                    ListView1.Items.EndUpdate;
+                  end;
+                  AutoSizeListViewColumns;
+                finally
+                  SendMessage(ListView1.Handle, WM_SETREDRAW, WPARAM(True), 0);
+                  RedrawWindow(ListView1.Handle, nil, 0,
+                    RDW_ERASE or RDW_FRAME or RDW_INVALIDATE or RDW_ALLCHILDREN);
+                end;
+
+                // Сохраняем выделение, если возможно
+                if (CurItem >= 0) and (CurItem < ListView1.Items.Count) then
+                begin
+                  ListView1.ItemIndex := CurItem;
+                  ListView1.Items[CurItem].Selected := True;
+                  ListView1.Items[CurItem].MakeVisible(False);
+                end
+                else if ListView1.Items.Count > 0 then
+                begin
+                  ListView1.ItemIndex := 0;
+                  ListView1.Items[0].Selected := True;
+                  ListView1.Items[0].MakeVisible(False);
+                end;
+              end);
+          end
+        ).Start;
+      end;
 
       Exit;
     end;
@@ -2086,8 +2138,8 @@ var
   Col: TListColumn;
   NeedPlatformCol: Boolean;
 begin
-  if TabControl1.Tabs.Count = 0 then Exit;
-  SelectedPlatform := TabControl1.Tabs[TabControl1.TabIndex];
+  if TabView1.Tabs.Count = 0 then Exit;
+  SelectedPlatform := TabView1.Tabs[TabView1.TabIndex].Caption;
   NeedPlatformCol := SameText(SelectedPlatform, 'All') or
                      SameText(SelectedPlatform, 'Installed') or
                      SameText(SelectedPlatform, 'Favorites');
@@ -2177,6 +2229,27 @@ begin
   end;
 
   FPendingItemIndex := -1;
+end;
+
+function TSGLMainFormHelper.GetLanguagesPack(const Platform: string): TStringList;
+begin
+  Result := nil;
+  if Platform = '' then Exit;
+  if not Assigned(FLangPackCache) then Exit;
+
+  FLangPackLock.Enter;
+  try
+    if not FLangPackCache.TryGetValue(Platform, Result) then
+    begin
+      Result := TStringList.Create;
+      Result.Delimiter       := ';';
+      Result.StrictDelimiter := True;
+      Result.DelimitedText   := FConfig.ReadString('LanguagesPack', Platform, '');
+      FLangPackCache.Add(Platform, Result);
+    end;
+  finally
+    FLangPackLock.Leave;
+  end;
 end;
 
 //----Для миниатюр----
@@ -2922,6 +2995,8 @@ begin
         WriteStr(FGameData[i].CommandLine);
         WriteStr(FGameData[i].PlayMode);
         WriteStr(FGameData[i].Source);
+        WriteStr(FGameData[i].ConfigurationCommandLine);
+        WriteStr(FGameData[i].Emulator);
       end;
     finally
       S.Free;
@@ -2990,6 +3065,8 @@ begin
         FGameData[i].CommandLine       := ReadStr;
         FGameData[i].PlayMode          := ReadStr;
         FGameData[i].Source            := ReadStr;
+        FGameData[i].ConfigurationCommandLine := ReadStr;
+        FGameData[i].Emulator          := ReadStr;
       end;
       FActualGameCount := Count;
       Result := True;
@@ -3016,7 +3093,7 @@ var
 begin
   pmPlatformFilter.Items.Clear;
 
-  CurrentTab := TabControl1.Tabs[TabControl1.TabIndex];
+  CurrentTab := TabView1.Tabs[TabView1.TabIndex].Caption;
 
   // Разрешаем для All, Installed и Favorites
   if not (SameText(CurrentTab, 'All') or
@@ -3099,7 +3176,7 @@ var
   ActiveFlag: ^Boolean; // Указатель на флаг активности
 begin
   Item := Sender as TMenuItem;
-  CurrentTab := TabControl1.Tabs[TabControl1.TabIndex];
+  CurrentTab := TabView1.Tabs[TabView1.TabIndex].Caption;
 
   // Выбираем правильный список в зависимости от вкладки
   if SameText(CurrentTab, 'All') then
@@ -3305,8 +3382,8 @@ begin
     else
       ClearGameInfo;
 
-    if TabControl1.TabIndex >= 0 then
-      SelectedPlatform := TabControl1.Tabs[TabControl1.TabIndex]
+    if TabView1.TabIndex >= 0 then
+      SelectedPlatform := TabView1.Tabs[TabView1.TabIndex].Caption
     else
       SelectedPlatform := '';
 
@@ -3731,7 +3808,7 @@ begin
     end);
 end;
 
-function TSGLMainFormHelper.LoadScaledHoverBitmapWIC(const FilePath: string): TBitmap;
+function TSGLMainFormHelper.LoadScaledHoverBitmapWIC(const FilePath: string; MaxSideOverride: Integer = 0): TBitmap;
 var
   WIC: TWICImage;
   MaxSide, SrcW, SrcH, DstW, DstH: Integer;
@@ -3749,12 +3826,17 @@ begin
     if WIC.Empty or (WIC.Width <= 0) or (WIC.Height <= 0) then Exit;
 
     // Ограничиваем размер превью размером плитки
-    MaxSide := 0;
-    if Assigned(FListItemHeightImages) then
-      MaxSide := Max(FListItemHeightImages.Width, FListItemHeightImages.Height);
-    if MaxSide < 80 then
-      MaxSide := 256;
-    MaxSide := MaxSide + 16;
+    if MaxSideOverride > 0 then
+      MaxSide := MaxSideOverride
+    else
+    begin
+      MaxSide := 0;
+      if Assigned(FListItemHeightImages) then
+        MaxSide := Max(FListItemHeightImages.Width, FListItemHeightImages.Height);
+      if MaxSide < 80 then
+        MaxSide := 256;
+      MaxSide := MaxSide + 16;
+    end;
 
     SrcW := WIC.Width;
     SrcH := WIC.Height;
@@ -3775,15 +3857,20 @@ begin
     Result.PixelFormat := pf32bit;
     Result.SetSize(DstW, DstH);
 
-    SetStretchBltMode(Result.Canvas.Handle, HALFTONE);
-    SetBrushOrgEx(Result.Canvas.Handle, 0, 0, nil);
-    Result.Canvas.StretchDraw(Rect(0, 0, DstW, DstH), WIC);
+    Result.Canvas.Lock;
+    try
+      SetStretchBltMode(Result.Canvas.Handle, HALFTONE);
+      SetBrushOrgEx(Result.Canvas.Handle, 0, 0, nil);
+      Result.Canvas.StretchDraw(Rect(0, 0, DstW, DstH), WIC);
+    finally
+      Result.Canvas.Unlock;
+    end;
   finally
     WIC.Free;
   end;
 end;
 
-function TSGLMainFormHelper.LoadScaledHoverBitmap(const FilePath: string): TBitmap;
+function TSGLMainFormHelper.LoadScaledHoverBitmap(const FilePath: string; MaxSideOverride: Integer = 0): TBitmap;
 var
   Pic: TGraphic;
   Ext: string;
@@ -3818,12 +3905,17 @@ begin
 
     if (Pic.Width <= 0) or (Pic.Height <= 0) then Exit;
 
-    MaxSide := 0;
-    if Assigned(FListItemHeightImages) then
-      MaxSide := Max(FListItemHeightImages.Width, FListItemHeightImages.Height);
-    if MaxSide < 80 then
-      MaxSide := 256;
-    MaxSide := MaxSide + 16;
+    if MaxSideOverride > 0 then
+      MaxSide := MaxSideOverride
+    else
+    begin
+      MaxSide := 0;
+      if Assigned(FListItemHeightImages) then
+        MaxSide := Max(FListItemHeightImages.Width, FListItemHeightImages.Height);
+      if MaxSide < 80 then
+        MaxSide := 256;
+      MaxSide := MaxSide + 16;
+    end;
 
     SrcW := Pic.Width;
     SrcH := Pic.Height;
@@ -3844,9 +3936,14 @@ begin
     try
       Result.PixelFormat := pf32bit;
       Result.SetSize(DstW, DstH);
-      SetStretchBltMode(Result.Canvas.Handle, HALFTONE);
-      SetBrushOrgEx(Result.Canvas.Handle, 0, 0, nil);
-      Result.Canvas.StretchDraw(Rect(0, 0, DstW, DstH), Pic);
+      Result.Canvas.Lock;
+      try
+        SetStretchBltMode(Result.Canvas.Handle, HALFTONE);
+        SetBrushOrgEx(Result.Canvas.Handle, 0, 0, nil);
+        Result.Canvas.StretchDraw(Rect(0, 0, DstW, DstH), Pic);
+      finally
+        Result.Canvas.Unlock;
+      end;
     except
       Result.Free;
       Result := nil;
@@ -3867,6 +3964,602 @@ begin
   // следующий repaint сможет переармировать таймер и повторить попытку
   FHoverDwellID    := '';
   FHoverDwellIndex := -1;
+end;
+
+// Эмуляторы
+//------------------------------------------------------------------------------
+procedure TSGLMainFormHelper.LoadEmulatorsXML;
+var
+  EmuFile: string;
+begin
+  if not Assigned(FEmuAppPaths) or
+     not Assigned(FEmuCmdLines) or
+     not Assigned(FEmuByPlatformDefaults) then Exit;
+
+  FEmuAppPaths.Clear;
+  FEmuCmdLines.Clear;
+  FEmuByPlatformDefaults.Clear;
+
+  EmuFile := IncludeTrailingPathDelimiter(LaunchBoxDir) + 'Data\Emulators.xml';
+  if not TFile.Exists(EmuFile) then Exit;
+
+  // --- 1. <Emulator><ID>..</ID><ApplicationPath>..</ApplicationPath></Emulator>
+  ParseXMLRecords(EmuFile, 'Emulator',
+    function(const GetField: TGetXMLFieldFunc): Boolean
+    var
+      EmuID, AppPath: string;
+    begin
+      EmuID   := Trim(GetField('ID'));
+      AppPath := Trim(GetField('ApplicationPath'));
+      if (EmuID <> '') and (AppPath <> '') then
+        FEmuAppPaths.AddOrSetValue(EmuID, AppPath);
+      Result := True;
+    end, nil);
+
+  // --- 2. <EmulatorPlatform>...</EmulatorPlatform>
+  ParseXMLRecords(EmuFile, 'EmulatorPlatform',
+    function(const GetField: TGetXMLFieldFunc): Boolean
+    var
+      EmuID, Platform, CmdLine, IsDefault, Key: string;
+    begin
+      EmuID     := Trim(GetField('Emulator'));
+      Platform  := Trim(GetField('Platform'));
+      CmdLine   := Trim(GetField('CommandLine'));
+      IsDefault := Trim(GetField('Default'));
+
+      if (EmuID <> '') and (Platform <> '') then
+      begin
+        // CommandLine для пары EmuID|Platform
+        Key := EmuID + '|' + Platform;
+        FEmuCmdLines.AddOrSetValue(Key, CmdLine);
+
+        // Platform -> EmuID, если Default=true
+        if SameText(IsDefault, 'true') then
+          FEmuByPlatformDefaults.AddOrSetValue(Platform, EmuID);
+      end;
+      Result := True;
+    end, nil);
+end;
+
+function ResolveGameWorkingDir(const AppPath, RootFolder: string): string;
+// Разрешает рабочую папку для запуска игры через ShellOpen.
+// Правила:
+//   1. RootFolder пусто                 → папка ApplicationPath
+//   2. RootFolder абсолютный            → как есть
+//   3. RootFolder начинается с eXo      → LaunchBoxDir + RootFolder
+//   4. RootFolder начинается с ..\      → папка exe + RootFolder
+//   5. Иначе                            → LaunchBoxDir + RootFolder
+// Возвращает нормализованный абсолютный путь или '' (тогда ShellOpen
+// сам возьмёт папку файла).
+ function StartsWithExo(const Path: string): Boolean;
+ var
+  P: Integer;
+  First: string;
+ begin
+  P := Pos('\', Path);
+  if P > 0 then
+    First := Copy(Path, 1, P - 1)
+  else
+    First := Path;
+  Result := SameText(First, 'eXo');
+ end;
+
+var
+  Candidate, FullExePath, ExeDir, RF: string;
+begin
+  Result := '';
+  RF := Trim(RootFolder);
+
+  if AppPath <> '' then
+  begin
+    FullExePath := TPath.Combine(LaunchBoxDir, AppPath);
+    ExeDir      := ExtractFileDir(FullExePath);
+  end
+  else
+  begin
+    FullExePath := '';
+    ExeDir      := '';
+  end;
+
+  // 1. RootFolder пусто → папка exe
+  if RF = '' then
+  begin
+    Result := ExeDir;
+    Exit;
+  end;
+
+  // 2. Абсолютный — как есть
+  if TPath.IsPathRooted(RF) then
+    Candidate := RF
+
+  // 3. eXo\... → от LaunchBoxDir
+  else if SGLMainForm.IsExoFirstFolder(RF) then
+    Candidate := TPath.Combine(LaunchBoxDir, RF)
+
+  // 4. ..\ или .\ → от ПОЛНОГО пути exe (один ..\ = папка файла)
+  else if (RF = '..') or (RF = '.\') or
+          RF.StartsWith('..\') or RF.StartsWith('../') then
+  begin
+    if FullExePath = '' then Exit;
+    Candidate := TPath.Combine(FullExePath, RF);
+  end
+
+  // 5. Прочее относительное → от LaunchBoxDir
+  else
+    Candidate := TPath.Combine(LaunchBoxDir, RF);
+
+  // Нормализация
+  try
+    Candidate := TPath.GetFullPath(Candidate);
+  except
+    Result := ExeDir;   // не смогли нормализовать — fallback
+    Exit;
+  end;
+
+  // Не отрезаем "\" у корня диска: "C:\" → "C:\"
+  if not ((Length(Candidate) = 3) and (Candidate[2] = ':') and
+          (Candidate[3] = PathDelim)) then
+    Candidate := ExcludeTrailingPathDelimiter(Candidate);
+
+  // Существует — берём. Иначе — папка exe (безопасный дефолт).
+  if TDirectory.Exists(Candidate) then
+    Result := Candidate
+  else
+    Result := ExeDir;
+end;
+
+procedure TSGLMainFormHelper.LaunchGame(const RealIndex: Integer);
+var
+  Game: TGameData;
+  EmuID, FullPath, EmuExe, EmuParams, ROMPath, CmdLine, WorkDir, EmuKey: string;
+  UseEmulator: Boolean;
+  EmuRequested: Boolean;
+begin
+  if (RealIndex < 0) or (RealIndex >= Length(FGameData)) then Exit;
+  Game := FGameData[RealIndex];
+
+  // === 1. Резолвим ID эмулятора ===
+  EmuID := Trim(Game.Emulator);
+  EmuRequested := EmuID <> '';
+
+  if EmuID = '' then
+    if Assigned(FEmuByPlatformDefaults) and
+       FEmuByPlatformDefaults.TryGetValue(Game.Platforms, EmuID) then
+      EmuRequested := True;
+
+  // === 2. Ищем exe эмулятора ===
+  UseEmulator := False;
+  EmuExe      := '';
+  EmuParams   := '';
+
+  if EmuID <> '' then
+    if Assigned(FEmuAppPaths) and
+       FEmuAppPaths.TryGetValue(EmuID, EmuExe) and
+       (Trim(EmuExe) <> '') then
+    begin
+      EmuExe := TPath.GetFullPath(TPath.Combine(LaunchBoxDir, EmuExe));
+      UseEmulator := TFile.Exists(EmuExe);
+    end;
+
+  // === 3. Fallback (обычный запуск) ===
+  if not UseEmulator then
+  begin
+    if EmuRequested and (Game.Emulator <> '') then
+      OutputDebugString(PChar(Format(
+        'Emulator not found for "%s": "%s"',
+        [Game.GameName, Game.Emulator])));
+
+    FullPath := TPath.Combine(LaunchBoxDir, Game.ApplicationPath);
+    WorkDir  := ResolveGameWorkingDir(Game.ApplicationPath, Game.RootFolder);
+
+    // ═════════ TEMP DEBUG ═════════
+    {MessageBox(0,
+      PChar(
+        'Game: ' + Game.GameName + sLineBreak +
+        'AppPath: ' + Game.ApplicationPath + sLineBreak +
+        'RootFolder (raw): ' + Game.RootFolder + sLineBreak +
+        sLineBreak +
+        'Full path: ' + FullPath + sLineBreak +
+        'Work dir:  ' + WorkDir + sLineBreak +
+        sLineBreak +
+        'Work dir exists: ' +
+          BoolToStr(TDirectory.Exists(WorkDir), True)
+      ),
+      'DEBUG — LaunchGame (direct)',
+      MB_OK or MB_ICONINFORMATION);}
+
+    ShellOpen(FullPath, Game.CommandLine, WorkDir);
+    Exit;
+  end;
+
+  // === 4. Запуск через эмулятор ===
+  WorkDir := ExtractFileDir(EmuExe);
+  ROMPath := TPath.GetFullPath(TPath.Combine(LaunchBoxDir, Game.ApplicationPath));
+
+  CmdLine := Trim(Game.CommandLine);
+  if CmdLine = '' then
+  begin
+    EmuKey := EmuID + '|' + Game.Platforms;
+    if not (Assigned(FEmuCmdLines) and FEmuCmdLines.TryGetValue(EmuKey, EmuParams)) then
+      EmuParams := '';
+    CmdLine := Trim(EmuParams);
+  end;
+
+  if CmdLine <> '' then
+    CmdLine := CmdLine + ' ';
+  CmdLine := CmdLine + '"' + ROMPath + '"';
+
+  // ═════════ TEMP DEBUG ═════════
+  {MessageBox(0,
+    PChar(
+      'Game: ' + Game.GameName + sLineBreak +
+      'Emulator ID: ' + EmuID + sLineBreak +
+      'Emulator exe: ' + EmuExe + sLineBreak +
+      sLineBreak +
+      'ROM path: ' + ROMPath + sLineBreak +
+      'Work dir: ' + WorkDir + sLineBreak +
+      'CmdLine:  ' + CmdLine + sLineBreak +
+      sLineBreak +
+      'Work dir exists: ' +
+        BoolToStr(TDirectory.Exists(WorkDir), True)
+    ),
+    'DEBUG — LaunchGame (emulator)',
+    MB_OK or MB_ICONINFORMATION);}
+
+  RunProcess(EmuExe, CmdLine, WorkDir, False);
+end;
+
+procedure TSGLMainFormHelper.StartTileLoadThread;
+begin
+  FTileThread := TThread.CreateAnonymousThread(TileLoadThreadProc);
+  FTileThread.FreeOnTerminate := False;
+  FTileThread.Start;
+end;
+
+// Миниатюры видимых элементов ListView
+//------------------------------------------------------------------------------
+function TSGLMainFormHelper.FindTileImage(const Platforms, GameName, ReleaseYear,
+  ID, ForcedName: string): string;
+const
+  TILE_IMAGE_FOLDER = 'Screenshot - Game Title';
+  SUFFIXES: array[0..3] of string = ('', '-01', '-00', '-02');
+var
+  Idx: TDictionary<string, string>;
+  Dir, F, Ext, Base: string;
+  Bases: TArray<string>;
+  Found: string;
+  Lst: TStringList;
+
+  function Norm(const S: string): string;
+  const
+    BadChars = ':"''/\<>|?*[]''';
+  var
+    i: Integer;
+  begin
+    Result := S;
+    for i := 1 to Length(BadChars) do
+      Result := StringReplace(Result, BadChars[i], '_', [rfReplaceAll]);
+    Result := StringReplace(Result, Char($00B3), '#U00b3', [rfReplaceAll]);
+    Result := StringReplace(Result, Char($00E9), 'e', [rfReplaceAll]);
+    Result := StringReplace(Result, Char($00E0), 'a', [rfReplaceAll]);
+    Result := StringReplace(Result, Char($00FF), 'y', [rfReplaceAll]);
+    Result := LowerCase(Result);
+  end;
+
+  function Lookup(const BaseName: string): Boolean;
+  var
+    S: string;
+  begin
+    for S in SUFFIXES do
+      if Idx.TryGetValue(BaseName + S, Found) then
+      begin
+        Result := True;
+        Exit;
+      end;
+    Result := False;
+  end;
+
+begin
+  Result := '';
+  if Platforms = '' then Exit;
+
+  // === БЫСТРЫЙ ПУТЬ: Screenshot - Game Title ===
+  if not FTileFolderIndex.TryGetValue(Platforms, Idx) then
+  begin
+    Idx := TDictionary<string, string>.Create;
+    Dir := IncludeTrailingPathDelimiter(LaunchBoxDir) + 'Images\' +
+           Platforms + '\' + TILE_IMAGE_FOLDER;
+    if TDirectory.Exists(Dir) then
+      for F in TDirectory.GetFiles(Dir, '*.*', TSearchOption.soAllDirectories) do
+      begin
+        Ext := LowerCase(ExtractFileExt(F));
+        if (Ext = '.jpg') or (Ext = '.jpeg') or (Ext = '.png') or
+           (Ext = '.gif') or (Ext = '.bmp') then
+        begin
+          // ★★★ FIX: используем Norm, а не LowerCase — иначе игры
+          //     с апострофами/двоеточиями/акцентами не находятся
+          Base := Norm(TPath.GetFileNameWithoutExtension(F));
+          if not Idx.ContainsKey(Base) then Idx.Add(Base, F);
+        end;
+      end;
+    FTileFolderIndex.Add(Platforms, Idx);
+  end;
+
+  if Idx.Count > 0 then
+  begin
+    if ForcedName <> '' then
+      Bases := [Norm(ForcedName)]
+    else if ReleaseYear <> '' then
+      Bases := [Norm(GameName),
+                Norm(GameName + ' (' + ReleaseYear + ')'),
+                Norm(GameName + '(' + ReleaseYear + ')')]
+    else
+      Bases := [Norm(GameName)];
+
+    for Base in Bases do
+      if Lookup(Base) then Exit(Found);
+
+    if (ID <> '') and Lookup(Norm(ID)) then
+      Exit(Found);
+  end;
+
+  // === FALLBACK: общий поиск как у hover-превью ===
+  // Если в Screenshot - Game Title нет, берём из Box - Front / Gameplay / Disc и т.п.
+  Lst := TStringList.Create;
+  try
+    Lst.Duplicates    := dupIgnore;
+    Lst.CaseSensitive := False;
+    try
+      FindGameImages(Platforms, GameName, ReleaseYear, ID, ForcedName, Lst);
+    except
+      // тихо игнорируем ошибки поиска — лучше пусто, чем упасть
+    end;
+    if Lst.Count > 0 then
+      Result := Lst[0];
+  finally
+    Lst.Free;
+  end;
+end;
+
+function TSGLMainFormHelper.GetTileBitmap(ItemIndex, RealIndex: Integer): TBitmap;
+const
+  TILE_MAX_QUEUE = 64;
+var
+  Req: TTileRequest;
+  E: TTileEntry;
+  Queued: Boolean;
+begin
+  Result := nil;
+  if FClosing or (RealIndex < 0) or (RealIndex >= Length(FGameData)) then Exit;
+
+  // 1. Ключ кэша
+  Req.RawID := FGameData[RealIndex].ID;
+  Req.ID    := Req.RawID;
+  if Req.ID = '' then Req.ID := '#' + IntToStr(RealIndex);
+
+  // 2. Уже загружено
+  if FTileCache.TryGetValue(Req.ID, E) then
+  begin
+    E.LastUsed := GetTickCount;
+    Exit(E.Bmp);
+  end;
+
+  // 3. Картинки нет — диск повторно не сканируем
+  if FTileNoImage.ContainsKey(Req.ID) then Exit;
+
+  // 4. Уже в очереди
+  FTileLock.Enter;
+  try
+    Queued := FTileQueued.ContainsKey(Req.ID);
+  finally
+    FTileLock.Leave;
+  end;
+  if Queued then Exit;
+
+  // 5. Собираем запрос в главном потоке (FGameData/NConfig из потока не трогаем)
+  Req.Platform  := FGameData[RealIndex].Platforms;
+  Req.RealIndex := RealIndex;
+  Req.ItemIndex := ItemIndex;
+  Req.GameName  := FGameData[RealIndex].GameName;
+  Req.Year      := IntToStr(FGameData[RealIndex].ReleaseYear);
+  Req.ForceName := '';
+  if (Req.RawID <> '') and Assigned(NConfig) and
+     NConfig.ValueExists(Req.Platform, Req.RawID) then
+    Req.ForceName := Trim(NConfig.ReadString(Req.Platform, Req.RawID, ''));
+
+  if FViewAsList then
+    Req.Side := 128
+  else
+    Req.Side := Max(FListItemHeightImages.Width, FListItemHeightImages.Height);
+
+  // 6. Кладём в стек; при переполнении выбрасываем самые старые (уже невидимые)
+  FTileLock.Enter;
+  try
+    FTileQueued.Add(Req.ID, True);
+    FTileStack.Add(Req);
+    while FTileStack.Count > TILE_MAX_QUEUE do
+    begin
+      FTileQueued.Remove(FTileStack[0].ID);
+      FTileStack.Delete(0);
+    end;
+    FTileEvent.SetEvent;
+  finally
+    FTileLock.Leave;
+  end;
+end;
+
+procedure TSGLMainFormHelper.TileLoadThreadProc;
+var
+  Req: TTileRequest;
+  Gen: Integer;
+  HaveReq: Boolean;
+begin
+  CoInitializeEx(nil, COINIT_MULTITHREADED);
+  try
+    while not (TThread.CurrentThread.CheckTerminated or FClosing) do
+    begin
+      if FTileEvent.WaitFor(200) <> wrSignaled then Continue;
+
+      repeat
+        HaveReq := False;
+        FTileLock.Enter;
+        try
+          if FTileStack.Count > 0 then
+          begin
+            // LIFO: самые свежие запросы (= то, что на экране сейчас) первыми
+            Req := FTileStack[FTileStack.Count - 1];
+            FTileStack.Delete(FTileStack.Count - 1);
+            Gen := FTileGen;
+            HaveReq := True;
+          end
+          else
+            FTileEvent.ResetEvent;
+        finally
+          FTileLock.Leave;
+        end;
+
+        if HaveReq then
+          try
+            ProcessTileRequest(Req, Gen);
+          except
+            FTileLock.Enter;
+            try
+              FTileQueued.Remove(Req.ID);
+            finally
+              FTileLock.Leave;
+            end;
+          end;
+      until (not HaveReq) or TThread.CurrentThread.CheckTerminated or FClosing;
+    end;
+  finally
+    CoUninitialize;
+  end;
+end;
+
+procedure TSGLMainFormHelper.ProcessTileRequest(const Req: TTileRequest; Gen: Integer);
+var
+  R: TTileRequest;
+  Path: string;
+  Lst: TStringList;
+  Bmp: TBitmap;
+  Attempt: Integer;
+begin
+  R := Req;
+  Path := '';
+
+  // 1. Путь: общий с hover кэш
+  Path := FindTileImage(R.Platform, R.GameName, R.Year, R.RawID, R.ForceName);
+
+  // 2. Декодирование сразу в нужный размер
+  Bmp := nil;
+  if Path <> '' then
+    for Attempt := 1 to 2 do
+    begin
+      try
+        Bmp := LoadScaledHoverBitmap(Path, R.Side);
+      except
+        Bmp := nil;
+      end;
+      if Assigned(Bmp) and (Bmp.Width > 0) then Break;
+      FreeAndNil(Bmp);
+    end;
+
+  if TThread.CurrentThread.CheckTerminated or FClosing then
+  begin
+    Bmp.Free;
+    Exit;
+  end;
+
+  // 3. Результат — в главный поток
+  TThread.Queue(nil,
+    procedure
+    var
+      E: TTileEntry;
+    begin
+      if FClosing or (csDestroying in ComponentState) or (Gen <> FTileGen) then
+      begin
+        Bmp.Free;
+        Exit;
+      end;
+
+      FTileLock.Enter;
+      try
+        FTileQueued.Remove(R.ID);
+      finally
+        FTileLock.Leave;
+      end;
+
+      if Assigned(Bmp) and (Bmp.Width > 0) then
+      begin
+        E := TTileEntry.Create;
+        E.Bmp := Bmp;
+        E.LastUsed := GetTickCount;
+        FTileCache.AddOrSetValue(R.ID, E);
+        TrimTileCache;
+      end
+      else
+      begin
+        Bmp.Free;
+        FTileNoImage.AddOrSetValue(R.ID, True);
+      end;
+
+      if not FTileRepaintPending then
+      begin
+        FTileRepaintPending := True;
+        TThread.ForceQueue(nil,
+          procedure
+          begin
+            FTileRepaintPending := False;
+            if FClosing or (csDestroying in ComponentState) then Exit;
+            ListView1.Invalidate;
+          end, 40);
+      end;
+    end);
+end;
+
+procedure TSGLMainFormHelper.TrimTileCache;
+const
+  TILE_MIN_AGE_MS = 2000; // недавно отрисованные (на экране) не трогаем
+var
+  Pair: TPair<string, TTileEntry>;
+  OldestID: string;
+  OldestAge, Age, NowTick: Cardinal;
+  CacheMax: Integer;
+begin
+  // 1. Лимит = 2 страницы видимых элементов (текущая + запас на прокрутку)
+  CacheMax := Max(32, ListView_GetCountPerPage(ListView1.Handle) * 2);
+  // 2. Вытесняем самые старые, пока не уложимся
+  while FTileCache.Count > CacheMax do
+  begin
+    NowTick   := GetTickCount;
+    OldestID  := '';
+    OldestAge := TILE_MIN_AGE_MS;
+    for Pair in FTileCache do
+    begin
+      Age := NowTick - Pair.Value.LastUsed;
+      if Age > OldestAge then
+      begin
+        OldestAge := Age;
+        OldestID  := Pair.Key;
+      end;
+    end;
+    if OldestID = '' then Break;
+    FTileCache.Remove(OldestID);
+  end;
+end;
+
+procedure TSGLMainFormHelper.ClearTileCache;
+begin
+  FTileLock.Enter;
+  try
+    Inc(FTileGen);
+    FTileStack.Clear;
+    FTileQueued.Clear;
+  finally
+    FTileLock.Leave;
+  end;
+  FTileCache.Clear;
+  FTileNoImage.Clear;
 end;
 
 end.

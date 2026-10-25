@@ -10,7 +10,8 @@ uses Windows, Classes, SysUtils, Messages, ActiveX, ShlObj, Vcl.Dialogs, ShellAp
 // ---------------------------------------------------------------------------
 function GetExecPath: String;
 procedure RestartApplication(FClosing: Boolean);
-function ShellOpen(const FileName: string; const Parameters: string = ''): Boolean;
+function ShellOpen(const FileName: string; const Parameters: string = '';
+  const Directory: string = ''): Boolean;
 procedure OpenFileLocation(FileName: TFileName);
 function RunProcess(const ExePath: string; const Parameters: string = '';
   const WorkingDir: string = ''; RunAsAdmin: Boolean = False;
@@ -80,7 +81,9 @@ begin
 
   // Не вызываем Application.Terminate здесь, поток сделает это позже
 end;
-function ShellOpen(const FileName: string; const Parameters: string = ''): Boolean;
+
+function ShellOpen(const FileName: string; const Parameters: string = '';
+  const Directory: string = ''): Boolean;
 const
   ERR_MSG: array[0..31] of string = (
     '', 'File not found', 'Path not found', '', 'Access denied', '', '', 'Out of memory',
@@ -91,16 +94,25 @@ var
   Res: HINST;
   s: string;
   CurrentDir: string;
+  WorkDir: string;
 begin
   // Save current directory
   CurrentDir := GetCurrentDir;
 
-  try
-    // Set working directory to the executable's path
-    SetCurrentDir(ExtractFilePath(FileName));
+  // Куда переходить и что передать ShellExecute как рабочую папку
+  if Directory <> '' then
+    WorkDir := Directory
+  else
+    WorkDir := ExtractFilePath(FileName);
 
-    // Execute the file
-    Res := ShellExecute(0, 'open', PChar(FileName), PChar(Parameters), PChar(ExtractFilePath(FileName)), SW_SHOWNORMAL);
+  try
+    // Устанавливаем рабочий каталог
+    if WorkDir <> '' then
+      SetCurrentDir(WorkDir);
+
+    // Запускаем файл
+    Res := ShellExecute(0, 'open', PChar(FileName), PChar(Parameters),
+      PChar(WorkDir), SW_SHOWNORMAL);
 
     Result := Res > 32;
     if Result then Exit;

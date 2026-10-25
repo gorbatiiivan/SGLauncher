@@ -246,12 +246,13 @@ begin
 
   ForceDirectories(ExtractFilePath(DestFile));
 
-  if not CopyFile(PChar(SourceFile), PChar(DestFile), False) then
+  if not MoveFileEx(PChar(SourceFile), PChar(DestFile),
+                    MOVEFILE_COPY_ALLOWED or MOVEFILE_REPLACE_EXISTING) then
   begin
     FErrorMsg := Format(
-      'Copy error (code %d)' + sLineBreak +
-      'Из: %s' + sLineBreak +
-      'В:  %s',
+      'Move error (code %d)' + sLineBreak +
+      'From: %s' + sLineBreak +
+      'In:  %s',
       [GetLastError, SourceFile, DestFile]
     );
     FSuccess := False;

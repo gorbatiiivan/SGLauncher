@@ -126,26 +126,6 @@ function ReadXMLFileSmart(const FileName: string): string;
 // VerifyRawCount включает дополнительный проход по файлу для эвристической
 // сверки количества тегов — стоит доп. времени на очень больших файлах,
 // поэтому по умолчанию выключено.
-//
-// Пример использования в GamesCore.pas:
-//
-//   Stats := ParseXMLRecords(XMLFileName, 'Game',
-//     function(const GetField: TGetXMLFieldFunc): Boolean
-//     var
-//       G: TGameData;
-//     begin
-//       FillChar(G, SizeOf(G), 0);
-//       G.GameName := Trim(GetField('Title'));
-//       Result := G.GameName <> '';
-//       if not Result then Exit;
-//       G.ApplicationPath := GetField('ApplicationPath');
-//       G.Platforms       := Trim(GetField('Platform'));
-//       ... остальные поля так же ...
-//       if G.Platforms = '' then
-//         G.Platforms := PlatformFromFile;
-//       AddGameToArray(G);
-//     end,
-//     procedure(const Msg: string) begin Log(Msg); end); // ваш логгер
 function ParseXMLRecords(const FileName, RecordTagName: string;
   const OnRecord: TOnXMLRecordParsed; const LogProc: TXMLLogProc = nil;
   VerifyRawCount: Boolean = False): TXMLParseStats;

@@ -18,7 +18,7 @@ uses
   GamesCore in 'GamesCore.pas',
   SystemUtils in 'SystemUtils.pas',
   ToolBars in 'ToolBars.pas',
-  Aria2Thread in 'Aria2Thread.pas',
+  Aria2Thread in 'Aria2Thread.pas' {$R *.res},
   XMLLiteCore in 'XMLLiteCore.pas';
 
 {$R *.res}

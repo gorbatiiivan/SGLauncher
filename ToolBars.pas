@@ -381,7 +381,7 @@ begin
 
   // ────────────── Пункт «Добавить» ──────────────
   NewMenuItem := TMenuItem.Create(Popup);
-  NewMenuItem.Caption := 'Add...';
+  NewMenuItem.Caption := 'New button';
   NewMenuItem.Name     := 'miAddButton';
   NewMenuItem.ImageIndex := 0;               // можно позже назначить иконку
   NewMenuItem.OnClick  := OnButtonClick;     // тот же обработчик (потом разделим)
@@ -389,7 +389,7 @@ begin
 
   // ────────────── Пункт «Удалить» ──────────────
   NewMenuItem := TMenuItem.Create(Popup);
-  NewMenuItem.Caption := 'Delete';
+  NewMenuItem.Caption := 'Delete button';
   NewMenuItem.Name     := 'miDelete';
   NewMenuItem.ImageIndex := 2;               // например, крестик / мусорка
   NewMenuItem.OnClick  := OnButtonClick;
