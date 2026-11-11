@@ -42,9 +42,9 @@ object SGLMainForm: TSGLMainForm
   TextHeight = 15
   object Splitter1: TSplitter
     Left = 522
-    Top = 111
+    Top = 106
     Width = 7
-    Height = 639
+    Height = 644
     OnAfterResize = FormResize
     ExplicitLeft = 313
     ExplicitTop = 6
@@ -52,30 +52,16 @@ object SGLMainForm: TSGLMainForm
   end
   object Splitter4: TSplitter
     Left = 200
-    Top = 111
+    Top = 106
     Width = 7
-    Height = 639
-  end
-  object ToolBar1: TToolBar
-    AlignWithMargins = True
-    Left = 3
-    Top = 33
-    Width = 928
-    Height = 40
-    AutoSize = True
-    ButtonHeight = 38
-    ButtonWidth = 39
-    Caption = 'ToolBar1'
-    Constraints.MinHeight = 40
-    Constraints.MinWidth = 40
-    Images = ImageList1
-    TabOrder = 1
-    OnClick = ToolBar1Click
+    Height = 644
+    ExplicitTop = 111
+    ExplicitHeight = 639
   end
   object TabView1: TTabView
     AlignWithMargins = True
     Left = 3
-    Top = 79
+    Top = 74
     Width = 928
     Height = 29
     Align = alTop
@@ -90,12 +76,12 @@ object SGLMainForm: TSGLMainForm
   object Panel1: TPanel
     AlignWithMargins = True
     Left = 532
-    Top = 114
+    Top = 109
     Width = 399
-    Height = 633
+    Height = 638
     Align = alClient
     BevelOuter = bvNone
-    TabOrder = 2
+    TabOrder = 1
     object Splitter2: TSplitter
       Left = 0
       Top = 409
@@ -111,7 +97,7 @@ object SGLMainForm: TSGLMainForm
       Left = 0
       Top = 416
       Width = 399
-      Height = 217
+      Height = 222
       Align = alClient
       BevelOuter = bvNone
       TabOrder = 0
@@ -120,7 +106,7 @@ object SGLMainForm: TSGLMainForm
         Left = 97
         Top = 3
         Width = 205
-        Height = 88
+        Height = 93
         Margins.Left = 55
         Margins.Right = 55
         Align = alClient
@@ -137,7 +123,7 @@ object SGLMainForm: TSGLMainForm
         Left = 357
         Top = 0
         Width = 42
-        Height = 94
+        Height = 99
         Align = alRight
         Caption = '>'
         Enabled = False
@@ -156,7 +142,7 @@ object SGLMainForm: TSGLMainForm
         Left = 0
         Top = 0
         Width = 42
-        Height = 94
+        Height = 99
         Align = alLeft
         Caption = '<'
         Enabled = False
@@ -172,7 +158,7 @@ object SGLMainForm: TSGLMainForm
       end
       object Splitter3: TSplitter
         Left = 0
-        Top = 94
+        Top = 99
         Width = 399
         Height = 7
         Cursor = crVSplit
@@ -184,7 +170,7 @@ object SGLMainForm: TSGLMainForm
       object ScrollBox2: TScrollBox
         AlignWithMargins = True
         Left = 55
-        Top = 104
+        Top = 109
         Width = 289
         Height = 110
         Margins.Left = 55
@@ -383,9 +369,9 @@ object SGLMainForm: TSGLMainForm
   object Panel3: TPanel
     AlignWithMargins = True
     Left = 210
-    Top = 114
+    Top = 109
     Width = 309
-    Height = 633
+    Height = 638
     Align = alLeft
     BevelOuter = bvNone
     DoubleBuffered = False
@@ -396,13 +382,13 @@ object SGLMainForm: TSGLMainForm
     Font.Style = []
     ParentDoubleBuffered = False
     ParentFont = False
-    TabOrder = 3
+    TabOrder = 2
     object ListView1: TListView
       AlignWithMargins = True
       Left = 3
       Top = 37
       Width = 303
-      Height = 593
+      Height = 598
       Align = alClient
       BorderStyle = bsNone
       Columns = <
@@ -464,6 +450,7 @@ object SGLMainForm: TSGLMainForm
         Font.Name = 'Segoe UI'
         Font.Style = []
         ParentFont = False
+        Sorted = True
         TabOrder = 1
         OnChange = ComboBox1Change
       end
@@ -619,9 +606,9 @@ object SGLMainForm: TSGLMainForm
   end
   object NavigationView1: TNavigationView
     Left = 0
-    Top = 111
+    Top = 106
     Width = 200
-    Height = 639
+    Height = 644
     Align = alLeft
     CompactMode = False
     ParentColor = False
@@ -629,10 +616,41 @@ object SGLMainForm: TSGLMainForm
     Items = <>
     ItemHeight = 40
     TabStop = True
-    TabOrder = 5
+    TabOrder = 4
     Transparent = True
     NormalWidth = 200
     OnChangeItem = NavigationView1ChangeItem
+  end
+  object ScrollBox3: TScrollBox
+    Left = 0
+    Top = 30
+    Width = 934
+    Height = 41
+    HorzScrollBar.Smooth = True
+    HorzScrollBar.Tracking = True
+    VertScrollBar.Position = 6
+    VertScrollBar.Smooth = True
+    VertScrollBar.Tracking = True
+    Align = alTop
+    BorderStyle = bsNone
+    TabOrder = 5
+    OnResize = ScrollBox3Resize
+    object ToolBar1: TToolBar
+      Left = 0
+      Top = -6
+      Width = 137
+      Height = 917
+      Align = alNone
+      AutoSize = True
+      ButtonHeight = 38
+      ButtonWidth = 39
+      Caption = 'ToolBar1'
+      Constraints.MinHeight = 40
+      Constraints.MinWidth = 40
+      Images = ImageList1
+      TabOrder = 0
+      OnClick = ToolBar1Click
+    end
   end
   object TrayIcon: TTrayIcon
     PopupMenu = TrayPopupActionBar
@@ -652,7 +670,7 @@ object SGLMainForm: TSGLMainForm
     Left = 584
     Top = 24
     object ShowMenuItem: TMenuItem
-      Caption = 'Show'
+      Caption = 'Show/Hide'
       Default = True
       OnClick = TrayIconClick
     end
@@ -688,18 +706,36 @@ object SGLMainForm: TSGLMainForm
           OnClick = ViewasThumbnailsMenuItemClick
         end
         object ViewasListMenuItem: TMenuItem
-          Caption = 'View as List'
+          Caption = 'View as Extended List'
           OnClick = ViewasListMenuItemClick
         end
         object N13: TMenuItem
           Caption = '-'
         end
         object ShowImagesMenuItem: TMenuItem
-          Caption = 'Show Images (beta)'
+          Caption = 'Show Images'
           OnClick = ShowImagesMenuItemClick
         end
+        object Imagegroup1: TMenuItem
+          Caption = 'Image group'
+          object BoxesMenuItem: TMenuItem
+            Caption = 'Boxes'
+            OnClick = BoxesMenuItemClick
+          end
+          object GametitleMenuItem: TMenuItem
+            Caption = 'Game title'
+            OnClick = BoxesMenuItemClick
+          end
+          object ScreenshotsMenuItem: TMenuItem
+            Caption = 'Screenshots'
+            OnClick = BoxesMenuItemClick
+          end
+        end
+        object N1: TMenuItem
+          Caption = '-'
+        end
         object ShowImageonHoverMenuItem: TMenuItem
-          Caption = 'Show Image on Hover (beta)'
+          Caption = 'Show screenshot on Hover'
           OnClick = ShowImageonHoverMenuItemClick
         end
       end

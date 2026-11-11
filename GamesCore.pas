@@ -8,7 +8,7 @@ uses
   Vcl.Dialogs, Vcl.ComCtrls, Vcl.ExtCtrls, Vcl.ImgList, SyncObjs, PsAPI,
   Vcl.Imaging.jpeg, Vcl.Imaging.pngimage, Vcl.Imaging.GIFImg, Vcl.TabView,
   Math, ActiveX, ShellAPI, Vcl.Menus, ShlObj, StrUtils,  Winapi.CommCtrl,
-  System.Generics.Collections, System.Generics.Defaults;
+  System.Generics.Collections, System.Generics.Defaults, Winapi.Wincodec;
 
 type
   TSGLMainFormHelper = class helper for TSGLMainForm
@@ -102,6 +102,7 @@ type
     procedure ProcessTileRequest(const Req: TTileRequest; Gen: Integer);
     procedure TrimTileCache;
     procedure ClearTileCache;
+    function GetVisibleTileCount: Integer;
   end;
 
 implementation
@@ -116,6 +117,24 @@ begin
   for i := 0 to ATabs.Count - 1 do
     if SameText(ATabs[i].Caption, ACaption) then
       Exit(i);
+end;
+
+function RatingToStars(Rating: Integer): string;
+begin
+  if Rating <= 0 then
+    Exit('');
+  Result := StringOfChar('☆', Rating);
+end;
+
+function RoundRating(const S: string): Integer;
+var
+  F: Double;
+begin
+  Result := 0;
+  if Trim(S) = '' then Exit;
+  if not TryStrToFloat(Trim(S), F, TFormatSettings.Invariant) then Exit;
+  Result := Trunc(F + 0.5);   // 4.4→4, 4.5→5, 5.0→5
+  if Result < 0 then Result := 0;
 end;
 
 // Вспомогательная процедура
@@ -293,6 +312,10 @@ begin
       if G.PlayMode <> '' then FGameData[ExistingIndex].PlayMode := G.PlayMode;
       if G.ConfigurationCommandLine <> '' then FGameData[ExistingIndex].ConfigurationCommandLine := G.ConfigurationCommandLine;
       if G.Emulator <> '' then FGameData[ExistingIndex].Emulator := G.Emulator;
+      if G.Favorite then FGameData[ExistingIndex].Favorite := True;
+      if G.StarRating > 0 then FGameData[ExistingIndex].StarRating := G.StarRating;
+      if G.Rating <> '' then FGameData[ExistingIndex].Rating := G.Rating;
+      if G.MaxPlayers > 0 then FGameData[ExistingIndex].MaxPlayers := G.MaxPlayers;
     end
     else
     begin
@@ -717,28 +740,34 @@ end;
 
 procedure TSGLMainFormHelper.FillGenreSeriesCombo(const PlatformFilter: string);
 var
-  SavedIndex: Integer;
+  SavedName: string;
+  SavedIdx: Integer;
 begin
-  // === Заполняем ComboBox1 ТОЛЬКО если он ещё пустой (при запуске) ===
   if ComboBox1.Items.Count = 0 then
   begin
-    SavedIndex := FConfig.ReadInteger('SGAllSettings', 'LastFilterCategory', 0);
+    // Читаем по имени, а не по индексу — Sorted=True меняет порядок
+    SavedName := FConfig.ReadString('SGAllSettings', 'LastFilterCategory', 'Genre');
 
     ComboBox1.Items.BeginUpdate;
     try
       ComboBox1.Clear;
-      ComboBox1.Items.AddStrings(['Genre', 'Series', 'Developer', 'Publisher', 'Play Mode', 'Source', 'Year']);
+      ComboBox1.Items.AddStrings(['Genre', 'Series', 'Developer', 'Publisher',
+                                  'Play Mode', 'Source', 'Year', 'Favorite',
+                                  'Star Rating', 'Rating', 'Max Players']);
 
-      if (SavedIndex >= 0) and (SavedIndex < ComboBox1.Items.Count) then
-        ComboBox1.ItemIndex := SavedIndex
-      else
-        ComboBox1.ItemIndex := 0;
+      // С Sorted=True порядок уже алфавитный — индекс ищем по имени
+      SavedIdx := ComboBox1.Items.IndexOf(SavedName);
+      if SavedIdx < 0 then
+        SavedIdx := ComboBox1.Items.IndexOf('Genre');  // дефолт по имени, а не «0»
+      if SavedIdx < 0 then
+        SavedIdx := 0;                                 // крайний случай
+
+      ComboBox1.ItemIndex := SavedIdx;
     finally
       ComboBox1.Items.EndUpdate;
     end;
   end;
 
-  // Всегда обновляем только ComboBox2
   FillFilterValues;
 end;
 
@@ -752,13 +781,35 @@ var
   SelectedPlatforms: TStringList;
   PlatformFilterActive: Boolean;
   GamePlatforms: string;
+  Category: string;
 begin
   if TabView1.TabIndex < 0 then Exit;
+
+  if ComboBox1.ItemIndex >= 0 then
+    Category := ComboBox1.Items[ComboBox1.ItemIndex]
+  else
+    Category := '';
 
   SL := TStringList.Create;
   try
     SL.Sorted := True;
     SL.Duplicates := dupIgnore;
+
+    // === Star Rating: значения фиксированы, цикл по играм не нужен ===
+    if SameText(Category, 'Star Rating') then
+    begin
+      ComboBox2.Items.BeginUpdate;
+      try
+        ComboBox2.Clear;
+        ComboBox2.Items.Add('All');
+        for var Stars := 5 downto 1 do
+          ComboBox2.Items.Add(RatingToStars(Stars));
+        ComboBox2.ItemIndex := 0;
+      finally
+        ComboBox2.Items.EndUpdate;
+      end;
+      Exit;   // finally освободит SL
+    end;
 
     SelectedPlatform := TabView1.Tabs[TabView1.TabIndex].Caption;
     IsAllTab := SameText(SelectedPlatform, 'All');
@@ -787,6 +838,64 @@ begin
       PlatformFilterActive := False;
     end;
 
+        // === Max Players: только реально существующие значения,
+    //     с учётом текущей вкладки и платформенного фильтра ===
+    if SameText(Category, 'Max Players') then
+    begin
+      var PlayersList := TList<Integer>.Create;
+      try
+        for i := 0 to High(FGameData) do
+        begin
+          if IsInstalledTab then
+          begin
+            if not FGameData[i].IsInstalled then Continue;
+          end
+          else if IsFavoritesTab then
+          begin
+            if not IsFavorite(FGameData[i].ID) then Continue;
+          end
+          else if not IsAllTab then
+          begin
+            if not SameText(FGameData[i].Platforms, SelectedPlatform) then Continue;
+          end;
+
+          if PlatformFilterActive and Assigned(SelectedPlatforms) then
+          begin
+            if (FGameData[i].Platforms <> '') and
+               (SelectedPlatforms.IndexOf(FGameData[i].Platforms) < 0) then
+              Continue;
+          end;
+
+          if FGameData[i].MaxPlayers > 0 then
+            PlayersList.Add(FGameData[i].MaxPlayers);
+        end;
+
+        PlayersList.Sort;
+
+        ComboBox2.Items.BeginUpdate;
+        try
+          ComboBox2.Clear;
+          ComboBox2.Items.Add('All');
+
+          var LastVal := -1;
+          for var V in PlayersList do
+            if V <> LastVal then
+            begin
+              ComboBox2.Items.Add(IntToStr(V));
+              LastVal := V;
+            end;
+
+          ComboBox2.ItemIndex := 0;
+        finally
+          ComboBox2.Items.EndUpdate;
+        end;
+      finally
+        PlayersList.Free;
+      end;
+
+      Exit;
+    end;
+
     for i := 0 to High(FGameData) do
     begin
       // === Основной фильтр по вкладке ===
@@ -811,22 +920,28 @@ begin
           Continue;
       end;
 
-      case ComboBox1.ItemIndex of
-        0: Parts := FGameData[i].Genre.Split([';'{,'/'}]);
-        1: Parts := FGameData[i].Series.Split([';'{,'/'}]);
-        2: Parts := FGameData[i].Developer.Split([';']);
-        3: Parts := FGameData[i].Publisher.Split([';']);
-        4: Parts := FGameData[i].PlayMode.Split([';']);
-        5: Parts := FGameData[i].Source.Split([';']);
-        6: // Year
-          begin
-            if FGameData[i].ReleaseYear > 0 then
-              SL.Add(IntToStr(FGameData[i].ReleaseYear));
-            Continue; // пропускаем Parts
-          end;
+      if SameText(Category, 'Genre') then
+        Parts := FGameData[i].Genre.Split([';'{,'/'}])
+      else if SameText(Category, 'Series') then
+        Parts := FGameData[i].Series.Split([';'{,'/'}])
+      else if SameText(Category, 'Developer') then
+        Parts := FGameData[i].Developer.Split([';'])
+      else if SameText(Category, 'Publisher') then
+        Parts := FGameData[i].Publisher.Split([';'])
+      else if SameText(Category, 'Play Mode') then
+        Parts := FGameData[i].PlayMode.Split([';'])
+      else if SameText(Category, 'Source') then
+        Parts := FGameData[i].Source.Split([';'])
+      else if SameText(Category, 'Rating') then
+        Parts := FGameData[i].Rating.Split([';'])
+      else if SameText(Category, 'Year') then
+      begin
+        if FGameData[i].ReleaseYear > 0 then
+          SL.Add(IntToStr(FGameData[i].ReleaseYear));
+        Continue; // пропускаем Parts
+      end
       else
         Continue;
-      end;
 
       for var s in Parts do
         if Trim(s) <> '' then
@@ -837,7 +952,17 @@ begin
     try
       ComboBox2.Clear;
       ComboBox2.Items.Add('All');
-      ComboBox2.Items.AddStrings(SL);
+
+      if SameText(Category, 'Favorite') then
+      begin
+        // Favorite — фиксированные значения; SL в этом режиме пуст,
+        // потому что case в цикле уходит в else Continue
+        ComboBox2.Items.Add('Yes');
+        ComboBox2.Items.Add('No');
+      end
+      else
+        ComboBox2.Items.AddStrings(SL);
+
       ComboBox2.ItemIndex := 0;
     finally
       ComboBox2.Items.EndUpdate;
@@ -1088,8 +1213,14 @@ var
   IsPlatformTab: Boolean;
   SelectedPlatforms: TStringList;
   PlatformFilterActive: Boolean;
+  Category: string;
 begin
   if not FLoadingComplete then Exit;
+
+  if ComboBox1.ItemIndex >= 0 then
+    Category := ComboBox1.Items[ComboBox1.ItemIndex]
+  else
+    Category := '';
 
   SelectedPlatform := TabView1.Tabs[TabView1.TabIndex].Caption;
   Count := 0;
@@ -1151,41 +1282,75 @@ begin
       Match := False;
       FilterValue := Trim(ComboBox2.Text);
 
-      case ComboBox1.ItemIndex of
-        0: // Genre
-          if FGameData[i].Genre <> '' then
-            for var g in FGameData[i].Genre.Split([';'{,'/'}]) do
-              if SameText(Trim(g), FilterValue) then begin Match := True; Break; end;
-
-        1: // Series
-          if FGameData[i].Series <> '' then
-            for var s in FGameData[i].Series.Split([';'{,'/'}]) do
-              if SameText(Trim(s), FilterValue) then begin Match := True; Break; end;
-
-        2: // Developer
-          if FGameData[i].Developer <> '' then
-            for var d in FGameData[i].Developer.Split([';']) do
-              if SameText(Trim(d), FilterValue) then begin Match := True; Break; end;
-
-        3: // Publisher
-          if FGameData[i].Publisher <> '' then
-            for var p in FGameData[i].Publisher.Split([';']) do
-              if SameText(Trim(p), FilterValue) then begin Match := True; Break; end;
-
-        4: // Play Mode
-          if FGameData[i].PlayMode <> '' then
-            for var pm in FGameData[i].PlayMode.Split([';']) do
-              if SameText(Trim(pm), FilterValue) then begin Match := True; Break; end;
-
-        5: // Source
-          if FGameData[i].Source <> '' then
-            for var s in FGameData[i].Source.Split([';']) do
-              if SameText(Trim(s), FilterValue) then begin Match := True; Break; end;
-
-        6: // Year
-          if (FGameData[i].ReleaseYear > 0) and
-             (FGameData[i].ReleaseYear = StrToIntDef(FilterValue, 0)) then
-            Match := True;
+      if SameText(Category, 'Genre') then
+      begin
+        if FGameData[i].Genre <> '' then
+          for var g in FGameData[i].Genre.Split([';'{,'/'}]) do
+            if SameText(Trim(g), FilterValue) then begin Match := True; Break; end;
+      end
+      else if SameText(Category, 'Series') then
+      begin
+        if FGameData[i].Series <> '' then
+          for var s in FGameData[i].Series.Split([';'{,'/'}]) do
+            if SameText(Trim(s), FilterValue) then begin Match := True; Break; end;
+      end
+      else if SameText(Category, 'Developer') then
+      begin
+        if FGameData[i].Developer <> '' then
+          for var d in FGameData[i].Developer.Split([';']) do
+            if SameText(Trim(d), FilterValue) then begin Match := True; Break; end;
+      end
+      else if SameText(Category, 'Publisher') then
+      begin
+        if FGameData[i].Publisher <> '' then
+          for var p in FGameData[i].Publisher.Split([';']) do
+            if SameText(Trim(p), FilterValue) then begin Match := True; Break; end;
+      end
+      else if SameText(Category, 'Play Mode') then
+      begin
+        if FGameData[i].PlayMode <> '' then
+          for var pm in FGameData[i].PlayMode.Split([';']) do
+            if SameText(Trim(pm), FilterValue) then begin Match := True; Break; end;
+      end
+      else if SameText(Category, 'Source') then
+      begin
+        if FGameData[i].Source <> '' then
+          for var s in FGameData[i].Source.Split([';']) do
+            if SameText(Trim(s), FilterValue) then begin Match := True; Break; end;
+      end
+      else if SameText(Category, 'Year') then
+      begin
+        if (FGameData[i].ReleaseYear > 0) and
+           (FGameData[i].ReleaseYear = StrToIntDef(FilterValue, 0)) then
+          Match := True;
+      end
+      else if SameText(Category, 'Favorite') then
+      begin
+        if SameText(FilterValue, 'Yes') then
+          Match := FGameData[i].Favorite
+        else if SameText(FilterValue, 'No') then
+          Match := not FGameData[i].Favorite;
+      end
+      else if SameText(Category, 'Star Rating') then
+      begin
+        if RatingToStars(FGameData[i].StarRating) = FilterValue then
+          Match := True;
+      end
+      else if SameText(Category, 'Rating') then
+      begin
+        if FGameData[i].Rating <> '' then
+          for var r in FGameData[i].Rating.Split([';']) do
+            if SameText(Trim(r), FilterValue) then
+            begin
+              Match := True;
+              Break;
+            end;
+      end
+      else if SameText(Category, 'Max Players') then
+      begin
+        if (FGameData[i].MaxPlayers > 0) and
+           (FGameData[i].MaxPlayers = StrToIntDef(FilterValue, 0)) then
+          Match := True;
       end;
 
       if not Match then Continue;
@@ -1373,8 +1538,12 @@ begin
   end;
 
   // Если поток уже работает — не создаём новый
-  if Assigned(FImageLoadThread) and not FImageLoadThread.Finished then
-    Exit;
+  if Assigned(FImageLoadThread) then
+  begin
+    if not FImageLoadThread.Finished then
+      Exit;                          // ещё работает — не трогаем
+    FreeAndNil(FImageLoadThread);    // ← завершённый освобождаем
+  end;
 
   FImageLoadThread := TThread.CreateAnonymousThread(
     procedure
@@ -1464,6 +1633,9 @@ begin
 
                 ImgCurIndex := 0;
 
+                if Assigned(FullScreenForm) and FullScreenForm.Showing then
+                  FullScreenForm.Label2.Caption := GetImageInfoText;
+
                 if EnabledMiniatures then
                   CreateThumbnails;
 
@@ -1474,6 +1646,8 @@ begin
               begin
                 ScreenShotImage.Picture := nil;
                 ImgCurIndex := -1;
+                if Assigned(FullScreenForm) and FullScreenForm.Showing then
+                  FullScreenForm.Label2.Caption := GetImageInfoText;
                 NextImgBtn.Enabled := False;
                 PrevImgBtn.Enabled := False;
               end;
@@ -1816,6 +1990,10 @@ begin
       G.Source            := Trim(GetField('Source'));
       G.ConfigurationCommandLine := Trim(GetField('ConfigurationCommandLine'));
       G.Emulator          := Trim(GetField('Emulator'));
+      G.Favorite          := SameText(Trim(GetField('Favorite')), 'true');
+      G.StarRating        := RoundRating(GetField('CommunityStarRating'));
+      G.Rating            := Trim(GetField('Rating'));
+      G.MaxPlayers        := StrToIntDef(Trim(GetField('MaxPlayers')), 0);
 
       if G.Platforms = '' then
         G.Platforms := PlatformFromFile;
@@ -1982,6 +2160,14 @@ begin
   else
     FreeAndNil(FImageLoadThread);
 
+  FImageFileCacheLock.Enter;
+  try
+    if FImageFileCache.Count > 4 then
+      FImageFileCache.Clear;
+  finally
+    FImageFileCacheLock.Leave;
+  end;
+
   if (NewTabIndex < 0) or (NewTabIndex >= TabView1.Tabs.Count) then
     Exit;
 
@@ -1994,7 +2180,6 @@ begin
   RedrawRestored := False;
   try
     ClearGameInfo;
-    SetupListViewColumns;
     ClearTileCache;
     SetupListViewColumns;
 
@@ -2031,7 +2216,7 @@ begin
       // 3. Фоновое обновление — только если данные устарели
       if (Now - FLastInstalledRefresh) * SecsPerDay >= 10 then
       begin
-        TThread.CreateAnonymousThread(
+        var RefreshTh := TThread.CreateAnonymousThread(
           procedure
           var
             LocalChanged: Boolean;
@@ -2095,8 +2280,9 @@ begin
                   ListView1.Items[0].MakeVisible(False);
                 end;
               end);
-          end
-        ).Start;
+          end);
+          RefreshTh.FreeOnTerminate := True;   // ← КЛЮЧЕВОЕ
+          RefreshTh.Start;
       end;
 
       Exit;
@@ -2218,17 +2404,20 @@ end;
 procedure TSGLMainFormHelper.SelectionTimerTimer(Sender: TObject);
 begin
   FSelectionTimer.Enabled := False;
-  if FClosing then Exit; // ← обязательно добавь
+  if FClosing then Exit;
 
   if (FPendingItemIndex >= 0) and
      (FPendingItemIndex < ListView1.Items.Count) then
   begin
-    // НЕ трогай ListView1.ItemIndex — он уже правильный
     if ListView1.Selected <> nil then
       ShowGameByIndex(FPendingItemIndex);
   end;
 
   FPendingItemIndex := -1;
+
+  // Периодически подчищаем раздувшийся кэш плиток
+  if Assigned(FTileCache) and (FTileCache.Count > 0) then
+    TrimTileCache;
 end;
 
 function TSGLMainFormHelper.GetLanguagesPack(const Platform: string): TStringList;
@@ -2499,7 +2688,7 @@ begin
         ThumbBmp := TBitmap.Create;
         ThumbBmp.PixelFormat := pf32bit;
         ThumbBmp.SetSize(FThumbWidth, FThumbHeight);
-        ThumbBmp.AlphaFormat := afDefined;
+        ThumbBmp.AlphaFormat := afIgnored {включение ALFA afDefined};
 
         // Фон
         ThumbBmp.Canvas.Brush.Color := RGB(30, 30, 35);
@@ -2671,7 +2860,7 @@ begin
   // Отменяем предыдущую загрузку полного фото (если была)
   FFullImageCancel := True;
 
-  TThread.CreateAnonymousThread(
+  var Th := TThread.CreateAnonymousThread(
     procedure
     var
       WIC: TWICImage;
@@ -2708,7 +2897,9 @@ begin
           Bmp.Free;
           ImgCurIndex := 0;
         end);
-    end).Start;
+    end);
+    Th.FreeOnTerminate := True;
+    Th.Start;
 end;
 
 procedure TSGLMainFormHelper.LoadFullImageAsync(const FilePath: string);
@@ -2838,7 +3029,7 @@ begin
 
     ThumbBmp.PixelFormat := pf32bit;
     ThumbBmp.SetSize(FThumbWidth, FThumbHeight);
-    ThumbBmp.AlphaFormat := afDefined;
+    ThumbBmp.AlphaFormat := afIgnored {включение ALFA afDefined};
 
     ThumbBmp.Canvas.Brush.Color := RGB(30, 30, 35);
     ThumbBmp.Canvas.FillRect(Rect(0, 0, FThumbWidth, FThumbHeight));
@@ -2997,6 +3188,10 @@ begin
         WriteStr(FGameData[i].Source);
         WriteStr(FGameData[i].ConfigurationCommandLine);
         WriteStr(FGameData[i].Emulator);
+        S.WriteBuffer(FGameData[i].Favorite, SizeOf(Boolean));
+        S.WriteBuffer(FGameData[i].StarRating, SizeOf(Integer));
+        WriteStr(FGameData[i].Rating);
+        S.WriteBuffer(FGameData[i].MaxPlayers, SizeOf(Integer));
       end;
     finally
       S.Free;
@@ -3067,6 +3262,10 @@ begin
         FGameData[i].Source            := ReadStr;
         FGameData[i].ConfigurationCommandLine := ReadStr;
         FGameData[i].Emulator          := ReadStr;
+        S.ReadBuffer(FGameData[i].Favorite, SizeOf(Boolean));
+        S.ReadBuffer(FGameData[i].StarRating, SizeOf(Integer));
+        FGameData[i].Rating            := ReadStr;
+        S.ReadBuffer(FGameData[i].MaxPlayers, SizeOf(Integer));
       end;
       FActualGameCount := Count;
       Result := True;
@@ -3786,12 +3985,12 @@ begin
       if Assigned(Bmp) and (Bmp.Width > 0) then
       begin
         FHoverBitmapID := LocalID;
+        FHoverBitmap.SetSize(0, 0); // Освобождаем старый буфер перед присвоением
         FHoverBitmap.Assign(Bmp);
         Bmp.Free;
       end
       else
       begin
-        // Пустой результат НЕ кэшируем — следующий paint сможет запросить снова
         if Assigned(Bmp) then Bmp.Free;
         if FHoverBitmapID = LocalID then
         begin
@@ -3808,65 +4007,101 @@ begin
     end);
 end;
 
-function TSGLMainFormHelper.LoadScaledHoverBitmapWIC(const FilePath: string; MaxSideOverride: Integer = 0): TBitmap;
+function TSGLMainFormHelper.LoadScaledHoverBitmapWIC(const FilePath: string;
+  MaxSideOverride: Integer = 0): TBitmap;
 var
-  WIC: TWICImage;
-  MaxSide, SrcW, SrcH, DstW, DstH: Integer;
+  Factory: IWICImagingFactory;
+  Decoder: IWICBitmapDecoder;
+  Frame: IWICBitmapFrameDecode;
+  Scaler: IWICBitmapScaler;
+  Converter: IWICFormatConverter;
+  SrcW, SrcH, DstW, DstH: UINT;
+  MaxSide: Integer;
   Scale: Double;
+  Stride: UINT;
+  Pixels: TBytes;
+  HR: HRESULT;
+  Bmp: TBitmap;
+  SrcRow, DstRow: PByte;
+  y: Integer;
+  WPath: WideString;      // <-- держим строку живой на время вызова
 begin
   Result := nil;
+  if not TFile.Exists(FilePath) then Exit;
 
-  WIC := TWICImage.Create;
+  if MaxSideOverride > 0 then
+    MaxSide := MaxSideOverride
+  else
+  begin
+    MaxSide := 0;
+    if Assigned(FListItemHeightImages) then
+      MaxSide := Max(FListItemHeightImages.Width, FListItemHeightImages.Height);
+    if MaxSide < 80 then
+      MaxSide := 256;
+    MaxSide := MaxSide + 16;
+  end;
+
+  HR := CoCreateInstance(CLSID_WICImagingFactory, nil, CLSCTX_INPROC_SERVER,
+    IID_IWICImagingFactory, Factory);
+  if Failed(HR) or not Assigned(Factory) then Exit;
+
+  // === ФИКС: GUID_NULL вместо nil, локальная WPath вместо временной WideString ===
+  WPath := FilePath;
+  HR := Factory.CreateDecoderFromFilename(
+    PWideChar(WPath),
+    GUID_NULL,                       // было nil
+    GENERIC_READ,
+    WICDecodeMetadataCacheOnDemand,
+    Decoder);
+  if Failed(HR) then Exit;
+
+  HR := Decoder.GetFrame(0, Frame);
+  if Failed(HR) then Exit;
+
+  HR := Frame.GetSize(SrcW, SrcH);
+  if Failed(HR) or (SrcW = 0) or (SrcH = 0) then Exit;
+
+  if (SrcW <= UINT(MaxSide)) and (SrcH <= UINT(MaxSide)) then
+  begin
+    DstW := SrcW;
+    DstH := SrcH;
+  end
+  else
+  begin
+    Scale := Min(MaxSide / SrcW, MaxSide / SrcH);
+    DstW := Max(1, Round(SrcW * Scale));
+    DstH := Max(1, Round(SrcH * Scale));
+  end;
+
+  HR := Factory.CreateBitmapScaler(Scaler);
+  if Failed(HR) then Exit;
+  HR := Scaler.Initialize(Frame, DstW, DstH, WICBitmapInterpolationModeFant);
+  if Failed(HR) then Exit;
+
+  HR := Factory.CreateFormatConverter(Converter);
+  if Failed(HR) then Exit;
+  HR := Converter.Initialize(Scaler, GUID_WICPixelFormat32bppBGRA,
+    WICBitmapDitherTypeNone, nil, 0.0, WICBitmapPaletteTypeCustom);
+  if Failed(HR) then Exit;
+
+  Stride := DstW * 4;
+  SetLength(Pixels, Stride * DstH);
+  HR := Converter.CopyPixels(nil, Stride, Length(Pixels), @Pixels[0]);
+  if Failed(HR) then Exit;
+
+  Bmp := TBitmap.Create;
   try
-    try
-      WIC.LoadFromFile(FilePath);
-    except
-      Exit;
-    end;
-    if WIC.Empty or (WIC.Width <= 0) or (WIC.Height <= 0) then Exit;
-
-    // Ограничиваем размер превью размером плитки
-    if MaxSideOverride > 0 then
-      MaxSide := MaxSideOverride
-    else
+    Bmp.PixelFormat := pf32bit;
+    Bmp.SetSize(DstW, DstH);
+    for y := 0 to DstH - 1 do
     begin
-      MaxSide := 0;
-      if Assigned(FListItemHeightImages) then
-        MaxSide := Max(FListItemHeightImages.Width, FListItemHeightImages.Height);
-      if MaxSide < 80 then
-        MaxSide := 256;
-      MaxSide := MaxSide + 16;
+      SrcRow := @Pixels[y * Stride];
+      DstRow := Bmp.ScanLine[y];
+      Move(SrcRow^, DstRow^, Stride);
     end;
-
-    SrcW := WIC.Width;
-    SrcH := WIC.Height;
-
-    if (SrcW <= MaxSide) and (SrcH <= MaxSide) then
-    begin
-      DstW := SrcW;
-      DstH := SrcH;
-    end
-    else
-    begin
-      Scale := Min(MaxSide / SrcW, MaxSide / SrcH);
-      DstW := Max(1, Round(SrcW * Scale));
-      DstH := Max(1, Round(SrcH * Scale));
-    end;
-
-    Result := TBitmap.Create;
-    Result.PixelFormat := pf32bit;
-    Result.SetSize(DstW, DstH);
-
-    Result.Canvas.Lock;
-    try
-      SetStretchBltMode(Result.Canvas.Handle, HALFTONE);
-      SetBrushOrgEx(Result.Canvas.Handle, 0, 0, nil);
-      Result.Canvas.StretchDraw(Rect(0, 0, DstW, DstH), WIC);
-    finally
-      Result.Canvas.Unlock;
-    end;
-  finally
-    WIC.Free;
+    Result := Bmp;
+  except
+    Bmp.Free;
   end;
 end;
 
@@ -3877,80 +4112,7 @@ var
   MaxSide, SrcW, SrcH, DstW, DstH: Integer;
   Scale: Double;
 begin
-  Result := nil;
-  if not TFile.Exists(FilePath) then Exit;
-
-  Ext := LowerCase(ExtractFileExt(FilePath));
-  if (Ext = '.jpg') or (Ext = '.jpeg') then
-    Pic := TJPEGImage.Create
-  else if Ext = '.png' then
-    Pic := TPngImage.Create
-  else if Ext = '.gif' then
-    Pic := TGIFImage.Create
-  else if Ext = '.bmp' then
-    Pic := Vcl.Graphics.TBitmap.Create
-  else
-  begin
-    Result := LoadScaledHoverBitmapWIC(FilePath);
-    Exit;
-  end;
-
-  try
-    try
-      Pic.LoadFromFile(FilePath);
-    except
-      Result := LoadScaledHoverBitmapWIC(FilePath);
-      Exit;
-    end;
-
-    if (Pic.Width <= 0) or (Pic.Height <= 0) then Exit;
-
-    if MaxSideOverride > 0 then
-      MaxSide := MaxSideOverride
-    else
-    begin
-      MaxSide := 0;
-      if Assigned(FListItemHeightImages) then
-        MaxSide := Max(FListItemHeightImages.Width, FListItemHeightImages.Height);
-      if MaxSide < 80 then
-        MaxSide := 256;
-      MaxSide := MaxSide + 16;
-    end;
-
-    SrcW := Pic.Width;
-    SrcH := Pic.Height;
-
-    if (SrcW <= MaxSide) and (SrcH <= MaxSide) then
-    begin
-      DstW := SrcW;
-      DstH := SrcH;
-    end
-    else
-    begin
-      Scale := Min(MaxSide / SrcW, MaxSide / SrcH);
-      DstW := Max(1, Round(SrcW * Scale));
-      DstH := Max(1, Round(SrcH * Scale));
-    end;
-
-    Result := TBitmap.Create;
-    try
-      Result.PixelFormat := pf32bit;
-      Result.SetSize(DstW, DstH);
-      Result.Canvas.Lock;
-      try
-        SetStretchBltMode(Result.Canvas.Handle, HALFTONE);
-        SetBrushOrgEx(Result.Canvas.Handle, 0, 0, nil);
-        Result.Canvas.StretchDraw(Rect(0, 0, DstW, DstH), Pic);
-      finally
-        Result.Canvas.Unlock;
-      end;
-    except
-      Result.Free;
-      Result := nil;
-    end;
-  finally
-    Pic.Free;
-  end;
+  Result := LoadScaledHoverBitmapWIC(FilePath, MaxSideOverride);
 end;
 
 procedure TSGLMainFormHelper.HoverDwellTimerTimer(Sender: TObject);
@@ -4221,14 +4383,15 @@ end;
 function TSGLMainFormHelper.FindTileImage(const Platforms, GameName, ReleaseYear,
   ID, ForcedName: string): string;
 const
-  TILE_IMAGE_FOLDER = 'Screenshot - Game Title';
-  SUFFIXES: array[0..3] of string = ('', '-01', '-00', '-02');
+  SUFFIXES: array[0..5] of string = ('', '-01', '-00', '-02', '-03', '-04');
 var
   Idx: TDictionary<string, string>;
-  Dir, F, Ext, Base: string;
+  FolderKey, FolderName: string;
   Bases: TArray<string>;
   Found: string;
   Lst: TStringList;
+  FolderIdx: Integer;
+  PriorityFolders: TArray<string>;
 
   function Norm(const S: string): string;
   const
@@ -4246,88 +4409,129 @@ var
     Result := LowerCase(Result);
   end;
 
-  function Lookup(const BaseName: string): Boolean;
+    function LookupInDict(const Dict: TDictionary<string, string>): Boolean;
   var
-    S: string;
+    S, CurBase: string;
   begin
-    for S in SUFFIXES do
-      if Idx.TryGetValue(BaseName + S, Found) then
-      begin
-        Result := True;
-        Exit;
-      end;
     Result := False;
+    for CurBase in Bases do
+      for S in SUFFIXES do
+        if Dict.TryGetValue(CurBase + S, Found) then
+        begin
+          Result := True;
+          Exit;
+        end;
+    if (ID <> '') and Dict.TryGetValue(Norm(ID), Found) then
+      Result := True;
+  end;
+
+  procedure BuildIndex(const Platform, AFolderName: string;
+    out Dict: TDictionary<string, string>);
+  var
+    RootDir, RootDirNorm, FilePath, FileDir, FileExt, BaseName: string;
+    AllFiles: TStringDynArray;
+  begin
+    Dict := TDictionary<string, string>.Create;
+
+    RootDir := IncludeTrailingPathDelimiter(LaunchBoxDir) + 'Images\' +
+               Platform + '\' + AFolderName;
+    if not TDirectory.Exists(RootDir) then Exit;
+
+    RootDirNorm := ExcludeTrailingPathDelimiter(RootDir);
+    AllFiles := TDirectory.GetFiles(RootDir, '*.*', TSearchOption.soAllDirectories);
+
+    for FilePath in AllFiles do
+    begin
+      FileDir := ExcludeTrailingPathDelimiter(ExtractFileDir(FilePath));
+      if not SameText(FileDir, RootDirNorm) then Continue;
+
+      FileExt := LowerCase(ExtractFileExt(FilePath));
+      if (FileExt <> '.jpg') and (FileExt <> '.jpeg') and (FileExt <> '.png') and
+         (FileExt <> '.gif') and (FileExt <> '.bmp') then Continue;
+
+      BaseName := Norm(TPath.GetFileNameWithoutExtension(FilePath));
+      if not Dict.ContainsKey(BaseName) then
+        Dict.Add(BaseName, FilePath);
+    end;
+
+    for FilePath in AllFiles do
+    begin
+      FileDir := ExcludeTrailingPathDelimiter(ExtractFileDir(FilePath));
+      if SameText(FileDir, RootDirNorm) then Continue;
+
+      FileExt := LowerCase(ExtractFileExt(FilePath));
+      if (FileExt <> '.jpg') and (FileExt <> '.jpeg') and (FileExt <> '.png') and
+         (FileExt <> '.gif') and (FileExt <> '.bmp') then Continue;
+
+      BaseName := Norm(TPath.GetFileNameWithoutExtension(FilePath));
+      if not Dict.ContainsKey(BaseName) then
+        Dict.Add(BaseName, FilePath);
+    end;
   end;
 
 begin
-  Result := '';
+    Result := '';
   if Platforms = '' then Exit;
 
-  // === БЫСТРЫЙ ПУТЬ: Screenshot - Game Title ===
-  if not FTileFolderIndex.TryGetValue(Platforms, Idx) then
-  begin
-    Idx := TDictionary<string, string>.Create;
-    Dir := IncludeTrailingPathDelimiter(LaunchBoxDir) + 'Images\' +
-           Platforms + '\' + TILE_IMAGE_FOLDER;
-    if TDirectory.Exists(Dir) then
-      for F in TDirectory.GetFiles(Dir, '*.*', TSearchOption.soAllDirectories) do
-      begin
-        Ext := LowerCase(ExtractFileExt(F));
-        if (Ext = '.jpg') or (Ext = '.jpeg') or (Ext = '.png') or
-           (Ext = '.gif') or (Ext = '.bmp') then
-        begin
-          // ★★★ FIX: используем Norm, а не LowerCase — иначе игры
-          //     с апострофами/двоеточиями/акцентами не находятся
-          Base := Norm(TPath.GetFileNameWithoutExtension(F));
-          if not Idx.ContainsKey(Base) then Idx.Add(Base, F);
-        end;
-      end;
-    FTileFolderIndex.Add(Platforms, Idx);
+  // ── Набор папок по режиму ──
+  case FImageSourceMode of
+    1: PriorityFolders := ['Screenshot - Game Title'];
+    2: PriorityFolders := ['Screenshot - Gameplay'];
+  else
+    PriorityFolders := ['Box - Front', 'Screenshot - Game Title', 'Screenshot - Gameplay'];
   end;
 
-  if Idx.Count > 0 then
+  if ForcedName <> '' then
+    Bases := [Norm(ForcedName)]
+  else if ReleaseYear <> '' then
+    Bases := [Norm(GameName),
+              Norm(GameName + ' (' + ReleaseYear + ')'),
+              Norm(GameName + '(' + ReleaseYear + ')')]
+  else
+    Bases := [Norm(GameName)];
+
+  for FolderIdx := 0 to High(PriorityFolders) do
   begin
-    if ForcedName <> '' then
-      Bases := [Norm(ForcedName)]
-    else if ReleaseYear <> '' then
-      Bases := [Norm(GameName),
-                Norm(GameName + ' (' + ReleaseYear + ')'),
-                Norm(GameName + '(' + ReleaseYear + ')')]
-    else
-      Bases := [Norm(GameName)];
+    FolderName := PriorityFolders[FolderIdx];
+    FolderKey  := Platforms + '|' + FolderName;
 
-    for Base in Bases do
-      if Lookup(Base) then Exit(Found);
+    if not FTileFolderIndex.TryGetValue(FolderKey, Idx) then
+    begin
+      BuildIndex(Platforms, FolderName, Idx);
+      FTileFolderIndex.Add(FolderKey, Idx);
+    end;
 
-    if (ID <> '') and Lookup(Norm(ID)) then
+    if (Idx.Count > 0) and LookupInDict(Idx) then
       Exit(Found);
   end;
 
-  // === FALLBACK: общий поиск как у hover-превью ===
-  // Если в Screenshot - Game Title нет, берём из Box - Front / Gameplay / Disc и т.п.
-  Lst := TStringList.Create;
-  try
-    Lst.Duplicates    := dupIgnore;
-    Lst.CaseSensitive := False;
+  // Fallback — ТОЛЬКО в режиме «Boxes» (0).
+  // В режимах «Screenshots» (1) и «Game title» (2) пользователь явно
+  // выбрал категорию — fallback отключён.
+  if FImageSourceMode = 0 then
+  begin
+    Lst := TStringList.Create;
     try
-      FindGameImages(Platforms, GameName, ReleaseYear, ID, ForcedName, Lst);
-    except
-      // тихо игнорируем ошибки поиска — лучше пусто, чем упасть
+      Lst.Duplicates    := dupIgnore;
+      Lst.CaseSensitive := False;
+      try
+        FindGameImages(Platforms, GameName, ReleaseYear, ID, ForcedName, Lst);
+      except
+      end;
+      if Lst.Count > 0 then
+        Result := Lst[0];
+    finally
+      Lst.Free;
     end;
-    if Lst.Count > 0 then
-      Result := Lst[0];
-  finally
-    Lst.Free;
   end;
 end;
 
 function TSGLMainFormHelper.GetTileBitmap(ItemIndex, RealIndex: Integer): TBitmap;
-const
-  TILE_MAX_QUEUE = 64;
 var
   Req: TTileRequest;
   E: TTileEntry;
   Queued: Boolean;
+  MaxQueue: Integer;
 begin
   Result := nil;
   if FClosing or (RealIndex < 0) or (RealIndex >= Length(FGameData)) then Exit;
@@ -4367,17 +4571,22 @@ begin
      NConfig.ValueExists(Req.Platform, Req.RawID) then
     Req.ForceName := Trim(NConfig.ReadString(Req.Platform, Req.RawID, ''));
 
+  Req.Side := 0;
   if FViewAsList then
-    Req.Side := 128
-  else
-    Req.Side := Max(FListItemHeightImages.Width, FListItemHeightImages.Height);
+    Req.Side := Max(96, MulDiv(FListItemHeightImages.Height, 4, 3) + 16)
+  else if FListItemHeightImages.Width > 512 then
+    Req.Side := 512;
 
-  // 6. Кладём в стек; при переполнении выбрасываем самые старые (уже невидимые)
+  // ── Размер очереди привязан к видимому — БЕЗ жёсткого 64 ──
+  MaxQueue := GetVisibleTileCount * 2;
+  if MaxQueue < 128 then MaxQueue := 128;
+
+  // 6. Кладём в стек
   FTileLock.Enter;
   try
     FTileQueued.Add(Req.ID, True);
     FTileStack.Add(Req);
-    while FTileStack.Count > TILE_MAX_QUEUE do
+    while FTileStack.Count > MaxQueue do
     begin
       FTileQueued.Remove(FTileStack[0].ID);
       FTileStack.Delete(0);
@@ -4428,6 +4637,16 @@ begin
             finally
               FTileLock.Leave;
             end;
+
+            // Помечаем как "картинки нет" в главном потоке,
+            // чтобы не пытаться снова и снова
+            var FailedID := Req.ID;
+            TThread.Queue(nil,
+              procedure
+              begin
+                if FClosing or (csDestroying in ComponentState) then Exit;
+                FTileNoImage.AddOrSetValue(FailedID, True);
+              end);
           end;
       until (not HaveReq) or TThread.CurrentThread.CheckTerminated or FClosing;
     end;
@@ -4478,6 +4697,12 @@ begin
     begin
       if FClosing or (csDestroying in ComponentState) or (Gen <> FTileGen) then
       begin
+        FTileLock.Enter;
+        try
+          FTileQueued.Remove(R.ID);   // ← обязательно снять флаг
+        finally
+          FTileLock.Leave;
+        end;
         Bmp.Free;
         Exit;
       end;
@@ -4491,10 +4716,15 @@ begin
 
       if Assigned(Bmp) and (Bmp.Width > 0) then
       begin
+        // Защита от возможного перезаписывания (TObjectDictionary
+        // не всегда вызывает освобождение старого значения)
+        if FTileCache.ContainsKey(R.ID) then
+          FTileCache.Remove(R.ID);
+
         E := TTileEntry.Create;
         E.Bmp := Bmp;
         E.LastUsed := GetTickCount;
-        FTileCache.AddOrSetValue(R.ID, E);
+        FTileCache.Add(R.ID, E);
         TrimTileCache;
       end
       else
@@ -4519,25 +4749,30 @@ end;
 
 procedure TSGLMainFormHelper.TrimTileCache;
 const
-  TILE_MIN_AGE_MS = 2000; // недавно отрисованные (на экране) не трогаем
+  // Кэш = visible × 2 — запас на быструю прокрутку (пока грузится новая
+  // страница, старая ещё в памяти → обратный скролл без перезагрузки).
+  TILE_CACHE_MULT = 2;
+  // Минимум — для свёрнутого / крошечного окна. НЕ верхний потолок.
+  TILE_MIN_CACHE  = 128;
 var
   Pair: TPair<string, TTileEntry>;
   OldestID: string;
   OldestAge, Age, NowTick: Cardinal;
   CacheMax: Integer;
 begin
-  // 1. Лимит = 2 страницы видимых элементов (текущая + запас на прокрутку)
-  CacheMax := Max(32, ListView_GetCountPerPage(ListView1.Handle) * 2);
-  // 2. Вытесняем самые старые, пока не уложимся
+  CacheMax := GetVisibleTileCount * TILE_CACHE_MULT;
+  if CacheMax < TILE_MIN_CACHE then CacheMax := TILE_MIN_CACHE;
+  // ── Верхнего потолка НЕТ. Сколько видно × 2 — столько и держим. ──
+
   while FTileCache.Count > CacheMax do
   begin
     NowTick   := GetTickCount;
     OldestID  := '';
-    OldestAge := TILE_MIN_AGE_MS;
+    OldestAge := 0;
     for Pair in FTileCache do
     begin
       Age := NowTick - Pair.Value.LastUsed;
-      if Age > OldestAge then
+      if (OldestID = '') or (Age > OldestAge) then
       begin
         OldestAge := Age;
         OldestID  := Pair.Key;
@@ -4555,11 +4790,53 @@ begin
     Inc(FTileGen);
     FTileStack.Clear;
     FTileQueued.Clear;
+    FTileCache.Clear;
+    FTileNoImage.Clear;
   finally
     FTileLock.Leave;
   end;
-  FTileCache.Clear;
-  FTileNoImage.Clear;
+
+  // Очищаем накопившиеся кэши превью при наведении
+  FHoverLock.Enter;
+  try
+    FHoverPathCache.Clear;
+    FHoverNotFoundCache.Clear;
+    FHoverBitmapID := '';
+    FHoverBitmap.SetSize(0, 0);
+  finally
+    FHoverLock.Leave;
+  end;
+end;
+
+function TSGLMainFormHelper.GetVisibleTileCount: Integer;
+var
+  ListW, ListH, CellW, CellH, Cols, Rows, SbW, SbH: Integer;
+begin
+  Result := 0;
+  if not ListView1.HandleAllocated then Exit;
+  if not Assigned(FListItemHeightImages) then Exit;
+
+  SbW := GetSystemMetrics(SM_CXVSCROLL);
+  SbH := GetSystemMetrics(SM_CYHSCROLL);
+
+  ListW := ListView1.ClientWidth  - SbW;
+  ListH := ListView1.ClientHeight - SbH;
+  if ListW < 50 then ListW := 50;
+  if ListH < 50 then ListH := 50;
+
+  CellW := FListItemHeightImages.Width  + 30;
+  CellH := FListItemHeightImages.Height + 40;
+  if CellW < 40 then CellW := 40;
+  if CellH < 40 then CellH := 40;
+
+  Cols := ListW div CellW;
+  Rows := ListH div CellH;
+  if Cols < 1 then Cols := 1;
+  if Rows < 1 then Rows := 1;
+
+  Result := Cols * Rows;
+  // + запас на частично видимые по краям + префетч под прокрутку
+  Inc(Result, Max(8, Result div 4));
 end;
 
 end.

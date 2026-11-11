@@ -24,6 +24,7 @@ type
     Label4: TLabel;
     procedure PaintBox1Paint(Sender: TObject);
     procedure Label5Click(Sender: TObject);
+    procedure FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
   private
     { Private declarations }
   public
@@ -42,6 +43,13 @@ uses SystemUtils;
 procedure THelpForm.PaintBox1Paint(Sender: TObject);
 begin
   DrawAboutImage(PaintBox1);
+end;
+
+procedure THelpForm.FormKeyDown(Sender: TObject; var Key: Word;
+  Shift: TShiftState);
+begin
+if Key = VK_ESCAPE then
+    Close;
 end;
 
 procedure THelpForm.Label5Click(Sender: TObject);

@@ -10,9 +10,12 @@ type
   TFullScreenForm = class(TForm)
     FullScreenImage: TImage;
     Label1: TLabel;
+    Label2: TLabel;
     procedure FormMouseUp(Sender: TObject; Button: TMouseButton;
       Shift: TShiftState; X, Y: Integer);
     procedure FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
+    procedure FormMouseWheel(Sender: TObject; Shift: TShiftState;
+      WheelDelta: Integer; MousePos: TPoint; var Handled: Boolean);
   private
     { Private declarations }
   public
@@ -77,6 +80,8 @@ begin
   // Самое важное — делаем КОПИЮ изображения
   FullScreenImage.Picture.Assign(SGLMainForm.ScreenShotImage.Picture);
 
+  Label2.Caption := SGLMainForm.GetImageInfoText;
+
   Key := 0;  // глотаем клавишу
 end;
 
@@ -87,11 +92,33 @@ begin
    mbLeft :
     begin
      SGLMainForm.NextImgBtnClick(Sender);
+     Label2.Caption := SGLMainForm.GetImageInfoText;
      FullScreenImage.Picture.WICImage := SGLMainForm.ScreenShotImage.Picture.WICImage;
     end;
    mbRight:  Close;
    mbMiddle: Close;
  end;
+end;
+
+procedure TFullScreenForm.FormMouseWheel(Sender: TObject; Shift: TShiftState;
+  WheelDelta: Integer; MousePos: TPoint; var Handled: Boolean);
+begin
+  // 1. Главная форма жива и есть что листать
+  if (SGLMainForm = nil) or (SGLMainForm.ListView1.Items.Count = 0) then
+    Exit;
+
+  // 2. Колесо вверх — предыдущее, вниз — следующее
+  if WheelDelta > 0 then
+    SGLMainForm.PrevImgBtnClick(Sender)
+  else
+    SGLMainForm.NextImgBtnClick(Sender);
+
+  // 3. Копия изображения и обновление подписи
+  FullScreenImage.Picture.Assign(SGLMainForm.ScreenShotImage.Picture);
+  Label2.Caption := SGLMainForm.GetImageInfoText;
+
+  // 4. Событие обработано
+  Handled := True;
 end;
 
 end.

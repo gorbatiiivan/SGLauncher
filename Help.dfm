@@ -13,7 +13,9 @@ object HelpForm: THelpForm
   Font.Height = -11
   Font.Name = 'Segoe UI'
   Font.Style = []
+  KeyPreview = True
   ShowHint = True
+  OnKeyDown = FormKeyDown
   TextHeight = 13
   object HELPFORM_PAGECTRL1: TPageControl
     Left = 0
@@ -241,8 +243,7 @@ object HelpForm: THelpForm
           
             'F5          = Automatically rebuild the binary cache (requires "' +
             'Use Binary Cache" to be enabled in the tray menu).'
-          'Ctrl + + = Increase the ListView thumbnails size'
-          'Ctrl + -  = Decrease the ListView thumbnails size')
+          'Ctrl+ / Ctrl- = Resize items in Thumbnails and Extended List.')
         ReadOnly = True
         TabOrder = 0
       end

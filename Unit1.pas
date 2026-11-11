@@ -13,8 +13,9 @@ uses
   Vcl.TitleBarCtrls, Vcl.NavView;
 
 const
+  sReleaseDate = '11.11.2026';
   //Бинарный кэш для игр
-  CACHE_VERSION: Word = 2;
+  CACHE_VERSION: Word = 4;
 
 type
   TGameData = record
@@ -37,6 +38,10 @@ type
     Source: string;
     ConfigurationCommandLine: string;
     Emulator: string;
+    Favorite: Boolean;
+    StarRating: Integer;
+    Rating: string;
+    MaxPlayers: Integer;
   end;
 
   TTileEntry = class
@@ -54,7 +59,6 @@ type
 type
   TSGLMainForm = class(TForm)
     TrayIcon: TTrayIcon;
-    ToolBar1: TToolBar;
     ImageList1: TImageList;
     TrayPopupActionBar: TPopupActionBar;
     ShowMenuItem: TMenuItem;
@@ -140,6 +144,13 @@ type
     Image1: TImage;
     ShowImagesMenuItem: TMenuItem;
     Edit1: TEdit;
+    ScrollBox3: TScrollBox;
+    ToolBar1: TToolBar;
+    Imagegroup1: TMenuItem;
+    BoxesMenuItem: TMenuItem;
+    ScreenshotsMenuItem: TMenuItem;
+    N1: TMenuItem;
+    GametitleMenuItem: TMenuItem;
     procedure FormResize(Sender: TObject);
     procedure ListView1Data(Sender: TObject; Item: TListItem);
     procedure ListView1SelectItem(Sender: TObject; Item: TListItem; Selected: Boolean);
@@ -202,6 +213,8 @@ type
     procedure Image1Click(Sender: TObject);
     procedure Image1DblClick(Sender: TObject);
     procedure ShowImagesMenuItemClick(Sender: TObject);
+    procedure ScrollBox3Resize(Sender: TObject);
+    procedure BoxesMenuItemClick(Sender: TObject);
   protected
     NConfig: TMemIniFile;
     FClosing: Boolean;
@@ -314,6 +327,7 @@ type
     FTileRepaintPending: Boolean;
     FTileFolderIndex: TObjectDictionary<string, TDictionary<string, string>>; // платформа -> (имя файла в нижнем регистре -> путь); только поток миниатюр
     FShowListImages: Boolean;
+    FImageSourceMode: Integer;
     //----------------------
     //----CONFIG----
     function GetFConfig: TMemIniFile;
@@ -323,6 +337,7 @@ type
     //----FORM----
     procedure WMPostScrollSync(var Msg: TMessage); message WM_USER + 100;
     procedure WMCopyData(var Msg: TWMCopyData); message WM_COPYDATA;
+    procedure AppMessageHandler(var Msg: TMsg; var Handled: Boolean);
     //----OTHER COMPONENTS----
     procedure ApplyTransparentBackgroundToInfoPanel;
     procedure StyleMenuClick(Sender: TObject);
@@ -344,6 +359,7 @@ type
    public
     FConfig: TMemIniFile;
     FTorrentConfig: TMemIniFile;
+    function GetImageInfoText: string;
   end;
 
 var
@@ -366,9 +382,9 @@ begin
   Bmp.Free;
   inherited;
 end;
-
 //----CONFIG----
 //------------------------------------------------------------------------------
+
 function TSGLMainForm.GetFConfig: TMemIniFile;
 var
  AppName: String;
@@ -418,15 +434,17 @@ if Write = true then
   if FConfig.ReadBool('SGAllSettings', 'ShowDetailsPanel', True) then
     FConfig.WriteInteger('SGAllSettings', 'ListViewWidth', Panel3.Width);
   FConfig.WriteInteger('SGAllSettings', 'InfoPanelHeight', ScrollBox1.Height);
-  FConfig.WriteBool('SGAllSettings', 'ShowToolBar', ToolBar1.Visible);
-  FConfig.WriteString('SGAllSettings', 'ToolBarPosition', GetEnumName(TypeInfo(TAlign), Ord(ToolBar1.Align)));
+  FConfig.WriteBool('SGAllSettings', 'ShowToolBar', ScrollBox3.Visible);
+  FConfig.WriteString('SGAllSettings', 'ToolBarPosition', GetEnumName(TypeInfo(TAlign), Ord(ScrollBox3.Align)));
   FConfig.WriteString('SGAllSettings', 'Styles', TStyleManager.ActiveStyle.Name);
   if TabView1.Tabs.Count > 0 then
     FConfig.WriteString('SGAllSettings', 'LastTab', TabView1.Tabs[TabView1.TabIndex].Caption);
   if EnabledMiniatures then
     FConfig.WriteInteger('SGAllSettings', 'ThumbPos', ScrollBox2.Height);
-  FConfig.WriteInteger('SGAllSettings', 'LastFilterCategory', ComboBox1.ItemIndex);
+  if ComboBox1.ItemIndex >= 0 then
+  FConfig.WriteString('SGAllSettings', 'LastFilterCategory', ComboBox1.Items[ComboBox1.ItemIndex]);
   FConfig.WriteInteger('SGAllSettings', 'NavViewWidth', NavigationView1.Width);
+  FConfig.WriteInteger('SGAllSettings', 'ImageSourceMode', FImageSourceMode);
   FConfig.UpdateFile;
  end else
  begin
@@ -443,8 +461,7 @@ if Write = true then
   IgnoreDir := FConfig.ReadString('SGAllSettings', 'IgnoreDir', '');
   HideInTray:= FConfig.ReadBool('SGAllSettings', 'HideInTray', False);
   HideonstartupMenuItem.Checked := FConfig.ReadBool('SGAllSettings', 'HideInTray', False);
-  if isIconic(Handle) then
-  ShowMenuItem.Caption := 'Show' else ShowMenuItem.Caption := 'Hide';
+  if HideInTray then
   if FConfig.ReadBool('SGAllSettings', 'ShowDetailsPanel', True) then
     Panel3.Width := FConfig.ReadInteger('SGAllSettings', 'ListViewWidth', SGLMainForm.Width div 3);
   NavigationView1.Width := FConfig.ReadInteger('SGAllSettings', 'NavViewWidth',NavigationView1.Width);
@@ -452,21 +469,21 @@ if Write = true then
   ScrollBox1.Height := FConfig.ReadInteger('SGAllSettings', 'InfoPanelHeight', ScrollBox1.Height);
   if FConfig.ReadBool('SGAllSettings', 'ShowToolBar', False) then
    begin
-    ToolBar1.Visible := True;
+    ScrollBox3.Visible := True;
     ToolBarShowMenuItem.Checked := True;
    end else
    begin
-    ToolBar1.Visible := False;
+    ScrollBox3.Visible := False;
     ToolBarShowMenuItem.Checked := False;
    end;
   //ToolBar
   s := FConfig.ReadString('SGAllSettings', 'ToolBarPosition', 'alTop');
-  ToolBar1.Align := TAlign(GetEnumValue(TypeInfo(TAlign), s));
+  ScrollBox3.Align := TAlign(GetEnumValue(TypeInfo(TAlign), s));
   // Делаем ToolBar всегда первым в left
   PinToolBarOnTop;
-  if ToolBar1.Align = alTop then ToolBar1.Top := -1;
+  if ScrollBox3.Align = alTop then ScrollBox3.Top := -1;
 
-  UpdateToolbarMenuChecks(ToolBarTopMenuItem, ToolBar1);
+  UpdateToolbarMenuChecks(ToolBarTopMenuItem, ScrollBox3);
   //---------------------------------------------------------------------------
   AutostartMenuItem.Checked := IsInStartupFolder;
   EmptyWorkingSetMenuItem.Checked := FConfig.ReadBool('SGAllSettings', 'EmptyWorkingSet', False);
@@ -489,7 +506,9 @@ if Write = true then
     Splitter3.Visible := False;
    end;
   // Принудительно заполняем ComboBox1 один раз при запуске
-  ComboBox1.ItemIndex := FConfig.ReadInteger('SGAllSettings', 'LastFilterCategory', 0);
+  var SavedName := FConfig.ReadString('SGAllSettings', 'LastFilterCategory', 'Genre');
+  var Idx := ComboBox1.Items.IndexOf(SavedName);
+  if Idx >= 0 then ComboBox1.ItemIndex := Idx else ComboBox1.ItemIndex := 0;
   FillGenreSeriesCombo('All');
   //---------------------------------------------------------------------------
   UseBinaryCacheMenuItem.Checked := FConfig.ReadBool('SGAllSettings', 'UseBinaryCache', False);
@@ -518,12 +537,13 @@ if Write = true then
   ViewasListMenuItem.Checked := FConfig.ReadBool('SGAllSettings', 'ViewAsList', False);
   FViewAsList         := ViewasListMenuItem.Checked;
   ShowImageonHoverMenuItem.Enabled := ViewasThumbnailsMenuItem.Checked or ViewasListMenuItem.Checked;
+  ShowImagesMenuItem.Enabled := ViewasThumbnailsMenuItem.Checked or ViewasListMenuItem.Checked;
   if FViewAsList then
   begin
     ListView1.ViewStyle := vsIcon;
     ListView1.LargeImages := nil;
     FListItemHeightImages.Width  := 100;
-    FListItemHeightImages.Height := 50;
+    FListItemHeightImages.Height := FConfig.ReadInteger('SGAllSettings', 'ListRowHeight', 50);
     ListView1.LargeImages := FListItemHeightImages;
     ListView1.OnAdvancedCustomDrawItem := ListView1AdvancedCustomDrawItem;
     ResizeListViewTiles(0);
@@ -531,8 +551,8 @@ if Write = true then
   else if ViewasThumbnailsMenuItem.Checked then
   begin
     ListView1.ViewStyle := vsIcon;
-    FListItemHeightImages.Width  := FConfig.ReadInteger('SGAllSettings', 'TileWidth', 125);
-    FListItemHeightImages.Height := FConfig.ReadInteger('SGAllSettings', 'TileHeight', 100);
+    FListItemHeightImages.Width  := FConfig.ReadInteger('SGAllSettings', 'TileWidth', 120);
+    FListItemHeightImages.Height := MulDiv(FListItemHeightImages.Width, 4, 3);
     ListView1.LargeImages := FListItemHeightImages;
     ListView1.OnAdvancedCustomDrawItem := ListView1AdvancedCustomDrawItem;
   end else
@@ -542,6 +562,12 @@ if Write = true then
   end;
   VerticaltabsMenuItem.Checked := FConfig.ReadBool('SGAllSettings', 'VerticalTabs', False);
   ApplyTabsLayout(VerticaltabsMenuItem.Checked);
+  // ---- Загрузка режима источника изображений для ListView ----
+  FImageSourceMode := FConfig.ReadInteger('SGAllSettings', 'ImageSourceMode', 0);
+  if (FImageSourceMode < 0) or (FImageSourceMode > 2) then FImageSourceMode := 0;
+  BoxesMenuItem.Checked    := (FImageSourceMode = 0);
+  GametitleMenuItem.Checked      := (FImageSourceMode = 1);
+  ScreenshotsMenuItem.Checked    := (FImageSourceMode = 2);
  end;
 end;
 
@@ -581,6 +607,37 @@ begin
   SetActiveWindow(Handle);
 
   Msg.Result := 1;
+end;
+
+procedure TSGLMainForm.AppMessageHandler(var Msg: TMsg; var Handled: Boolean);
+var
+  P: TPoint;
+  H: HWND;
+  Delta: Integer;
+begin
+  case Msg.message of
+
+    // ────────── Колесо мыши ──────────
+    WM_MOUSEWHEEL:
+      begin
+        GetCursorPos(P);                       // надёжнее, чем Msg.pt
+        H := WindowFromPoint(P);
+        if (H <> 0) and ((H = ScrollBox3.Handle)
+                        or IsChild(ScrollBox3.Handle, H)) then
+        begin
+          Delta := SmallInt(HiWord(Msg.wParam));   // +120 / -120
+          if (GetKeyState(VK_SHIFT) < 0)
+            or (not ScrollBox3.VertScrollBar.IsScrollBarVisible) then
+            ScrollBox3.HorzScrollBar.Position :=
+              ScrollBox3.HorzScrollBar.Position - Delta div 2
+          else
+            ScrollBox3.VertScrollBar.Position :=
+              ScrollBox3.VertScrollBar.Position - Delta div 2;
+          Handled := True;
+        end;
+      end;
+
+  end;
 end;
 
 procedure TSGLMainForm.FormCloseQuery(Sender: TObject; var CanClose: Boolean);
@@ -877,6 +934,8 @@ begin
    begin
     LoadToolButtons(ToolBar1, FConfig, ImageList1, ToolBar1Click);
     AddItemToButtonPopup(ToolBar1, FConfig, Self, ToolBarMenuClick);
+    ScrollBox3.PopupMenu := ToolBar1.PopupMenu;
+    UpdateToolBarWrap(ToolBar1);
    end;
 
   //Создание список стиль
@@ -895,6 +954,9 @@ begin
 
   // Делаем ToolBar всегда первым в left
   PinToolBarOnTop;
+
+  // Нужно в ScrollBar3 работал Mouse Scroll
+  Application.OnMessage := AppMessageHandler;
 end;
 
 procedure TSGLMainForm.FormKeyDown(Sender: TObject; var Key: Word;
@@ -1235,27 +1297,42 @@ begin
     TxtR.Right := BorderR.Right - 2;
     InflateRect(TxtR, 0, -2);
 
-    var CapR := TxtR;
-    CapR.Top    := CapR.Top + 4;
-    CapR.Bottom := CapR.Top + ((TxtR.Bottom - TxtR.Top) div 2) - 2;
+    // 1) Высоты строк: название (обычный шрифт) и платформа (уменьшенный)
+    var NameH := Sender.Canvas.TextHeight('Wg');
+    OldSize := Sender.Canvas.Font.Size;
+    try
+      Sender.Canvas.Font.Size := Max(7, ListView1.Font.Size - 2);
+      var PlatH := Sender.Canvas.TextHeight('Wg');
+      Sender.Canvas.Font.Size := OldSize;
 
-    DrawTxt(NameStr, CapR,
-      DT_LEFT or DT_WORDBREAK or DT_NOPREFIX or DT_END_ELLIPSIS,
-      TextColor, False);
+      // 2) Блок «название + платформа» центрируем по вертикали
+      var BlockH := NameH;
+      if PlatStr <> '' then Inc(BlockH, PlatH + 2);
+      var BlockTop := TxtR.Top + ((TxtR.Bottom - TxtR.Top) - BlockH) div 2;
 
-    if PlatStr <> '' then
-    begin
-      var PlatR2 := TxtR;
-      PlatR2.Top := CapR.Bottom + 2;
-      OldSize := Sender.Canvas.Font.Size;
-      try
+      // 3) Название
+      var CapR := TxtR;
+      CapR.Top    := BlockTop;
+      CapR.Bottom := BlockTop + NameH;
+
+      DrawTxt(NameStr, CapR,
+        DT_LEFT or DT_SINGLELINE or DT_NOPREFIX or DT_END_ELLIPSIS,
+        TextColor, False);
+
+      // 4) Платформа под названием
+      if PlatStr <> '' then
+      begin
+        var PlatR2 := TxtR;
+        PlatR2.Top    := CapR.Bottom + 2;
+        PlatR2.Bottom := PlatR2.Top + PlatH;
+
         Sender.Canvas.Font.Size := Max(7, ListView1.Font.Size - 2);
         DrawTxt(PlatStr, PlatR2,
           DT_LEFT or DT_SINGLELINE or DT_VCENTER or DT_END_ELLIPSIS or DT_NOPREFIX,
           PlatColor, False);
-      finally
-        Sender.Canvas.Font.Size := OldSize;
       end;
+    finally
+      Sender.Canvas.Font.Size := OldSize;
     end;
     Exit;
   end;
@@ -1469,11 +1546,13 @@ end;
 // ListView thumbnails
 procedure TSGLMainForm.ResizeListViewTiles(Delta: Integer);
 const
-  MinW      = 80;
-  AspectNum = 100;
-  AspectDen = 125;
+  MinW      = 60;
+  AspectNum = 4;
+  AspectDen = 3;
   ListMinW  = 160;
   ListH     = 50;
+  ListMinH  = 30;
+  ListMaxH  = 200;
 var
   NewW, NewH, MaxW, MaxW_W, MaxW_H, UsableW: Integer;
 begin
@@ -1485,29 +1564,34 @@ begin
   // === View as List ===
   if FViewAsList then
   begin
-    MaxW := UsableW - 8;
-    if MaxW < ListMinW then MaxW := ListMinW;
+    // 1) Ctrl+/Ctrl- меняют ВЫСОТУ строки (иконка считается от неё в draw)
+    NewH := FListItemHeightImages.Height + Delta;
+    if NewH < ListMinH then NewH := ListMinH;
+    if NewH > ListMaxH then NewH := ListMaxH;
+    NewW := FListItemHeightImages.Width;
 
-    NewW := FListItemHeightImages.Width + Delta;
-    if NewW < ListMinW then NewW := ListMinW;
-    if NewW > MaxW    then NewW := MaxW;
-
-    // Всегда пересоздаём/перепривязываем ImageList и spacing.
-    // После смены стиля (особенно 'Windows') ListView сбрасывает
-    // LVM_SETICONSPACING — простой Perform без rebind не помогает.
+    // 2) Пересоздаём ImageList только если высота реально изменилась
+    //    (после смены стиля 'Windows' ListView сбрасывает LVM_SETICONSPACING,
+    //    поэтому rebind и spacing делаем всегда)
     ListView1.LargeImages := nil;
-    if (FListItemHeightImages.Width <> NewW) or
-       (FListItemHeightImages.Height <> ListH) then
+    if FListItemHeightImages.Height <> NewH then
     begin
       FreeAndNil(FListItemHeightImages);
       FListItemHeightImages := TImageList.Create(Self);
       FListItemHeightImages.Width  := NewW;
-      FListItemHeightImages.Height := ListH;
+      FListItemHeightImages.Height := NewH;
+
+      // 3) Старые битмапы малого разрешения — сбрасываем, перегрузятся под новый размер
+      ClearTileCache;
+
+      FConfig.WriteInteger('SGAllSettings', 'ListRowHeight', NewH);
+      FConfig.UpdateFile;
     end;
     ListView1.LargeImages := FListItemHeightImages;
 
+    // 4) Ширина строки — на весь список, высота — по новой высоте
     ListView1.Perform(LVM_SETICONSPACING, 0,
-      MAKELPARAM(UsableW, ListH + 25));
+      MAKELPARAM(UsableW, NewH + 25));
     ListView1.Invalidate;
     Exit;
   end;
@@ -1807,9 +1891,15 @@ begin
   with FullScreenForm do
     begin
       Label1.Caption := FGameData[FFilteredIndices[ListView1.ItemIndex]].GameName;
+      Label2.Caption := GetImageInfoText;
       FullScreenForm.FullScreenImage.Picture.Assign(ScreenShotImage.Picture);
       Show;
     end;
+end;
+
+procedure TSGLMainForm.ScrollBox3Resize(Sender: TObject);
+begin
+  UpdateToolBarWrap(ToolBar1);
 end;
 
 procedure TSGLMainForm.PrevImgBtnClick(Sender: TObject);
@@ -1837,6 +1927,16 @@ begin
 
   // Синхронизируем выделение в галерее миниатюр
   if EnabledMiniatures then SyncThumbnailSelection;
+end;
+
+function TSGLMainForm.GetImageInfoText: string;
+begin
+  // 1. Изображений нет или индекс вне диапазона
+  if (ImgList.Count = 0) or (ImgCurIndex < 0) or (ImgCurIndex >= ImgList.Count) then
+    Exit('Image 0 / 0');
+
+  // 2. Формат: Image текущий / максимум : папка
+  Result := Format('Image %d / %d', [ImgCurIndex + 1, ImgList.Count]);
 end;
 
 procedure TSGLMainForm.Splitter3Moved(Sender: TObject);
@@ -1969,6 +2069,32 @@ begin
  Close;
 end;
 
+procedure TSGLMainForm.BoxesMenuItemClick(Sender: TObject);
+var
+  NewMode: Integer;
+begin
+  if Sender = GametitleMenuItem then
+    NewMode := 1
+  else if Sender = ScreenshotsMenuItem then
+    NewMode := 2
+  else
+    NewMode := 0;
+
+  if FImageSourceMode = NewMode then Exit;
+
+  FImageSourceMode := NewMode;
+
+  BoxesMenuItem.Checked       := (NewMode = 0);
+  GametitleMenuItem.Checked   := (NewMode = 1);
+  ScreenshotsMenuItem.Checked := (NewMode = 2);
+
+  FConfig.WriteInteger('SGAllSettings', 'ImageSourceMode', FImageSourceMode);
+  FConfig.UpdateFile;
+
+  ClearTileCache;
+  ListView1.Invalidate;
+end;
+
 procedure TSGLMainForm.BtnMenuClick(Sender: TObject);
 var
   P: TPoint;
@@ -1983,14 +2109,14 @@ end;
 procedure TSGLMainForm.PinToolBarOnTop;
 begin
   // 1) Z-order: тулбар первым в списке контролов (разрешает ничьи при равных Top/Left)
-  ToolBar1.SendToBack;
+  ScrollBox3.SendToBack;
   // 2) Порядок внутри одной стороны задаётся Top/Left — ставим вне диапазона,
   //    после Realign VCL сам выставит реальные координаты
-  case ToolBar1.Align of
-    alTop:    ToolBar1.Top  := -1;
-    alLeft:   ToolBar1.Left := -1;
-    alBottom: ToolBar1.Top  := ToolBar1.Parent.ClientHeight;
-    alRight:  ToolBar1.Left := ToolBar1.Parent.ClientWidth;
+  case ScrollBox3.Align of
+    alTop:    ScrollBox3.Top  := -1;
+    alLeft:   ScrollBox3.Left := -1;
+    alBottom: ScrollBox3.Top  := ScrollBox3.Parent.ClientHeight;
+    alRight:  ScrollBox3.Left := ScrollBox3.Parent.ClientWidth;
   end;
 end;
 
@@ -2051,19 +2177,22 @@ begin
 
   if AlignValue >= 0 then
    begin
-    ToolBar1.Align := TAlign(AlignValue);
+    ScrollBox3.Align := TAlign(AlignValue);
     // Делаем ToolBar всегда первым в left
     PinToolBarOnTop;
-    if ToolBar1.Align = alTop then ToolBar1.Top := -1;
+    if ScrollBox3.Align = alTop then ScrollBox3.Top := -1;
    end;
 
-  case ToolBar1.Align of
+  UpdateToolBarWrap(ToolBar1);
+
+  case ScrollBox3.Align of
     alTop, alBottom:
-      ToolBar1.Height := 40;
+      ScrollBox3.Height := 40;
 
     alLeft, alRight:
-      ToolBar1.Width := 40;
+      ScrollBox3.Width := 40;
   end;
+  UpdateToolBarWrap(ToolBar1);
 end;
 
 procedure TSGLMainForm.ToolBarMenuClick(Sender: TObject);
@@ -2165,6 +2294,7 @@ begin
             ToolBar1.AutoSize := False;
             LoadToolButtons(ToolBar1, FConfig, ImageList1, ToolBar1Click);
             ToolBar1.AutoSize := True;
+            UpdateToolBarWrap(ToolBar1);
            end;
         end;
     end;
@@ -2234,6 +2364,7 @@ begin
             ToolBar1.AutoSize := False;
             LoadToolButtons(ToolBar1, FConfig, ImageList1, ToolBar1Click);
             ToolBar1.AutoSize := True;
+            UpdateToolBarWrap(ToolBar1);
           end;
         end;
       finally
@@ -2553,13 +2684,18 @@ begin
   ApplyTabsLayout(VerticaltabsMenuItem.Checked);
 
   // Делаем ToolBar всегда первым в left
-  ToolBar1.SendToBack;
-  case ToolBar1.Align of
-    alLeft:   ToolBar1.Left := -1;
+  ScrollBox3.SendToBack;
+  case ScrollBox3.Align of
+    alLeft:   ScrollBox3.Left := -1;
   end;
 
   FConfig.WriteBool('SGAllSettings', 'VerticalTabs', VerticaltabsMenuItem.Checked);
   FConfig.UpdateFile;
+
+  // Нужно чтобы PlatformBtn имел правельную длину
+  Edit1.Width := Panel3.Width div 3 - 10;
+  ComboBox1.Width := Edit1.Width - 10;
+  ComboBox2.Width := Edit1.Width - 10;
 end;
 
 //----MENUEXTRAS----
@@ -2589,7 +2725,7 @@ begin
   with HelpForm do
    begin
      Position := poDesktopCenter;
-     Label2.Caption := 'ReleaseDate: ' + FormatDateTime('dd.mm.yyyy', Date);
+     Label2.Caption := 'ReleaseDate: ' + sReleaseDate;
      HELPFORM_PAGECTRL1.ActivePageIndex := 0;
      Show;
    end;
@@ -2636,13 +2772,14 @@ with Sender as TMenuItem do
     // 2) Пересоздаём с размерами плиток
     FreeAndNil(FListItemHeightImages);
     FListItemHeightImages := TImageList.Create(Self);
-    FListItemHeightImages.Width  := FConfig.ReadInteger('SGAllSettings', 'TileWidth', 125);
-    FListItemHeightImages.Height := FConfig.ReadInteger('SGAllSettings', 'TileHeight', 100);
+    FListItemHeightImages.Width  := FConfig.ReadInteger('SGAllSettings', 'TileWidth', 120);
+    FListItemHeightImages.Height := MulDiv(FListItemHeightImages.Width, 4, 3);
 
     // 3) Привязываем
     ListView1.LargeImages := FListItemHeightImages;
     ListView1.OnAdvancedCustomDrawItem := ListView1AdvancedCustomDrawItem;
     ShowImageonHoverMenuItem.Enabled := True;
+    ShowImagesMenuItem.Enabled := True;
 
     // 4) Сбрасываем унаследованный от list-режима спейсинг —
     //    теперь ListView сам подберёт отступы под размер плитки
@@ -2653,6 +2790,7 @@ with Sender as TMenuItem do
     ListView1.ViewStyle := vsReport;
     ListView1.OnAdvancedCustomDrawItem := nil;
     ShowImageonHoverMenuItem.Enabled := False;
+    ShowImagesMenuItem.Enabled := False;
 
     // 1. Отменяем запрос, который поток мог как раз обрабатывать
     FHoverLock.Enter;
@@ -2710,12 +2848,13 @@ with Sender as TMenuItem do
       FreeAndNil(FListItemHeightImages);
       FListItemHeightImages := TImageList.Create(Self);
       FListItemHeightImages.Width  := 100;
-      FListItemHeightImages.Height := 50;
+      FListItemHeightImages.Height := FConfig.ReadInteger('SGAllSettings', 'ListRowHeight', 50);
 
       // 3) Привязываем
       ListView1.LargeImages := FListItemHeightImages;
       ListView1.OnAdvancedCustomDrawItem := ListView1AdvancedCustomDrawItem;
       ShowImageonHoverMenuItem.Enabled := True;
+      ShowImagesMenuItem.Enabled := True;
 
       // 4) Устанавливаем «списочный» отступ
       ListView1.Invalidate;
@@ -2729,6 +2868,7 @@ with Sender as TMenuItem do
       ListView1.ViewStyle := vsReport;
       ListView1.OnAdvancedCustomDrawItem := nil;
       ShowImageonHoverMenuItem.Enabled := False;
+      ShowImagesMenuItem.Enabled := False;
 
       // Сброс hover-состояния (как в ViewAsThumbnails1Click)
       FHoverLock.Enter;
@@ -2852,7 +2992,8 @@ begin
 with Sender as TMenuItem do
    begin
     Checked := not Checked;
-    ToolBar1.Visible := Checked;
+    ScrollBox3.Visible := Checked;
+    if Checked then UpdateToolBarWrap(ToolBar1);
     FConfig.WriteBool('SGAllSettings', 'ShowToolBar', Checked);
     FConfig.UpdateFile;
    end;

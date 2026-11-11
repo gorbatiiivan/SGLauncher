@@ -26,7 +26,7 @@ procedure DeleteToolButton(ToolBar: TToolBar; Hint: string;
   Config: TMemIniFile; ImageList: TImageList; OnButtonClick: TNotifyEvent);
 procedure AddItemToButtonPopup(ToolBar: TToolBar; Config: TMemIniFile; Form: TForm;
   OnButtonClick: TNotifyEvent);
-procedure UpdateToolbarMenuChecks(MenuItem: TMenuItem; ToolBar: TToolBar);
+procedure UpdateToolbarMenuChecks(MenuItem: TMenuItem; AlignedControl: TControl);
 procedure UpdateToolBarWrap(ToolBar: TToolBar);
 // ---------------------------------------------------------------------------
 
@@ -417,7 +417,7 @@ begin
   ToolBar.PopupMenu := Popup;
 end;
 
-procedure UpdateToolbarMenuChecks(MenuItem: TMenuItem; ToolBar: TToolBar);
+procedure UpdateToolbarMenuChecks(MenuItem: TMenuItem; AlignedControl: TControl);
 // Checked in INI ToolBar align for menu
 var
   I: Integer;
@@ -428,7 +428,7 @@ begin
   Root := MenuItem.Parent;
 
   AlignName :=
-    GetEnumName(TypeInfo(TAlign), Ord(ToolBar.Align));
+    GetEnumName(TypeInfo(TAlign), Ord(AlignedControl.Align));
 
   for I := 0 to Root.Count - 1 do
   begin
@@ -442,26 +442,52 @@ var
   i: Integer;
   Btn: TToolButton;
   CurrentWidth: Integer;
+  TotalWidth: Integer;
   LastVisibleIdx: Integer;
+  Vertical: Boolean;
+  P: TWinControl;
+  BtnW, FrameSize: Integer;
+  NeedScroll: Boolean;
 begin
-  if not ToolBar.Wrapable then Exit;
+  // 0) Ищем ближайший ScrollBox-предок и смотрим, где он выровнен
+  Vertical := False;
+  P := ToolBar.Parent;
+  while Assigned(P) do
+  begin
+    if P is TScrollBox then
+    begin
+      Vertical := P.Align in [alLeft, alRight];
+      Break;
+    end;
+    P := P.Parent;
+  end;
+
+  // 1) Режим тулбара: Left/Right — перенос + вертикальный скролл,
+  //    Top/Bottom — одна строка, без вертикального скролла
+  if Assigned(P) then
+  begin
+    ToolBar.Wrapable := Vertical;
+    TScrollBox(P).VertScrollBar.Visible := Vertical;
+  end
+  else if not ToolBar.Wrapable then
+    Exit;
+
+  TotalWidth := 0;
 
   ToolBar.DisableAlign;
   try
-    // ШАГ 1: Сбросить Wrap у ВСЕХ кнопок через Windows API
-    // (свойство Delphi .Wrap иногда не сбрасывает реальный флаг TBSTATE_WRAP)
+    // 2) Сбросить Wrap у ВСЕХ кнопок (всегда, даже если Wrapable = False)
     for i := 0 to ToolBar.ButtonCount - 1 do
     begin
       ToolBar.Buttons[i].Wrap := False;
-      // Принудительно сбрасываем флаг на уровне WinAPI
       SendMessage(ToolBar.Handle, TB_SETSTATE, ToolBar.Buttons[i].Index,
         SendMessage(ToolBar.Handle, TB_GETSTATE, ToolBar.Buttons[i].Index, 0)
         and not TBSTATE_WRAP);
     end;
 
-    // ШАГ 2: Пересчитать переносы
-    CurrentWidth    := 0;
-    LastVisibleIdx  := -1;
+    // 3) Пересчитать переносы
+    CurrentWidth   := 0;
+    LastVisibleIdx := -1;
 
     for i := 0 to ToolBar.ButtonCount - 1 do
     begin
@@ -470,31 +496,101 @@ begin
       if not Btn.Visible then
         Continue;
 
-      Inc(CurrentWidth, Btn.Width);
-
+      Inc(TotalWidth, Btn.Width);
       if Btn.Style = tbsSeparator then
-        Inc(CurrentWidth, 6);
+        Inc(TotalWidth, 6);
 
-      if (CurrentWidth > ToolBar.ClientWidth) and (LastVisibleIdx >= 0) then
+      if ToolBar.Wrapable then
       begin
-        // Перенос ставим на последнюю видимую кнопку предыдущего ряда
-        ToolBar.Buttons[LastVisibleIdx].Wrap := True;
-        CurrentWidth := Btn.Width; // новый ряд
+        if Vertical then
+        begin
+          // каждая кнопка на своей строке
+          if LastVisibleIdx >= 0 then
+            ToolBar.Buttons[LastVisibleIdx].Wrap := True;
+        end
+        else
+        begin
+          Inc(CurrentWidth, Btn.Width);
+          if Btn.Style = tbsSeparator then
+            Inc(CurrentWidth, 6);
+
+          if (CurrentWidth > ToolBar.ClientWidth) and (LastVisibleIdx >= 0) then
+          begin
+            ToolBar.Buttons[LastVisibleIdx].Wrap := True;
+            CurrentWidth := Btn.Width; // новый ряд
+          end;
+        end;
       end;
 
       LastVisibleIdx := i;
     end;
 
-    // ШАГ 3: Последняя кнопка — никогда не переносит строку
+    // 4) Последняя кнопка — никогда не переносит строку
     if LastVisibleIdx >= 0 then
       ToolBar.Buttons[LastVisibleIdx].Wrap := False;
 
   finally
     ToolBar.EnableAlign;
-    // Принудительно пересчитать высоту тулбара
+
+    // 5) Ширина тулбара
+    if Assigned(P) then
+    begin
+      if Vertical then
+        ToolBar.Width := P.ClientWidth
+      else if TotalWidth > P.ClientWidth then
+        ToolBar.Width := TotalWidth       // шире scrollbox -> горизонтальный скролл
+      else
+        ToolBar.Width := P.ClientWidth;
+    end;
+
+    // 6) Пересчитать высоту тулбара
     ToolBar.AutoSize := False;
     ToolBar.AutoSize := True;
     ToolBar.Repaint;
+
+    // 7) Подгоняем размер ScrollBox под содержимое с учётом скроллбара
+    if Assigned(P) then
+    begin
+      if Vertical then
+      begin
+        // 7.1) Ширина самой широкой видимой кнопки
+        BtnW := 0;
+        for i := 0 to ToolBar.ButtonCount - 1 do
+          if ToolBar.Buttons[i].Visible and (ToolBar.Buttons[i].Width > BtnW) then
+            BtnW := ToolBar.Buttons[i].Width;
+          if BtnW = 0 then BtnW := 40;
+
+        // 7.2) Рамка ScrollBox без текущего скроллбара
+        FrameSize := P.Width - P.ClientWidth;
+        if (GetWindowLong(P.Handle, GWL_STYLE) and WS_VSCROLL) <> 0 then
+          Dec(FrameSize, GetSystemMetrics(SM_CXVSCROLL));
+
+        // 7.3) Нужен ли вертикальный скролл
+        NeedScroll := ToolBar.Height > P.ClientHeight;
+
+        // 7.4) Резервируем место под скроллбар заранее
+        if NeedScroll then
+          Inc(FrameSize, GetSystemMetrics(SM_CXVSCROLL));
+        if P.Width <> BtnW + FrameSize then
+          P.Width := BtnW + FrameSize;
+
+        ToolBar.Width := P.ClientWidth;
+      end
+      else
+      begin
+        // 7.5) Top/Bottom: то же самое по высоте
+        FrameSize := P.Height - P.ClientHeight;
+        if (GetWindowLong(P.Handle, GWL_STYLE) and WS_HSCROLL) <> 0 then
+          Dec(FrameSize, GetSystemMetrics(SM_CYHSCROLL));
+
+        NeedScroll := TotalWidth > P.ClientWidth;
+        if NeedScroll then
+          Inc(FrameSize, GetSystemMetrics(SM_CYHSCROLL));
+        if ToolBar.Height = 0 then ToolBar.Height := 40;
+        if P.Height <> ToolBar.Height + FrameSize then
+          P.Height := ToolBar.Height + FrameSize;
+      end;
+    end;
   end;
 end;
 
