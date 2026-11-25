@@ -13,7 +13,13 @@ uses
   Vcl.TitleBarCtrls, Vcl.NavView;
 
 const
-  sReleaseDate = '11.11.2026';
+  sReleaseDate = '25.11.2026';
+  {$IF Defined(CPUX64)}
+  UPDATE_URL = 'https://github.com/gorbatiiivan/SGLauncher/releases/latest/download/SGLauncher.zip';
+  {$ELSEIF Defined(CPUX86)}
+  UPDATE_URL = 'https://github.com/gorbatiiivan/SGLauncher/releases/latest/download/SGLauncher.32bit.zip';
+  {$ENDIF}
+
   //Бинарный кэш для игр
   CACHE_VERSION: Word = 4;
 
@@ -375,7 +381,7 @@ implementation
 {$R *.dfm}
 
 uses FullScreenImage, DialogForm, Help, ToolBtnProperties, GamesCore,
-     SystemUtils, ToolBars;
+     SystemUtils, ToolBars, AutoUpdater;
 
 destructor TTileEntry.Destroy;
 begin
@@ -647,6 +653,10 @@ var
 begin
   FClosing := True;
 
+  CheckUpdater(True, '', '');
+  // Страховка: удаляем оставшийся .old от предыдущего обновления
+  CleanupOldExeNow;
+
   // Останавливаем таймер переключение вкладок
   if Assigned(FTabChangeTimer) then FTabChangeTimer.Enabled := False;
 
@@ -655,7 +665,8 @@ begin
     FImageLoadThread.WaitFor;
     FreeAndNil(FImageLoadThread);
   end;
-    if Assigned(FLoaderThread) then begin
+
+  if Assigned(FLoaderThread) then begin
     FLoaderThread.Terminate;
     FLoaderThread.WaitFor;
     FreeAndNil(FLoaderThread);
@@ -957,6 +968,9 @@ begin
 
   // Нужно в ScrollBar3 работал Mouse Scroll
   Application.OnMessage := AppMessageHandler;
+
+  // Проверка обновлений
+  CheckUpdater(False, UPDATE_URL, sReleaseDate);
 end;
 
 procedure TSGLMainForm.FormKeyDown(Sender: TObject; var Key: Word;
@@ -2721,11 +2735,26 @@ begin
 end;
 
 procedure TSGLMainForm.AboutMenuItemClick(Sender: TObject);
+  function GetArchLabel: string;
+  begin
+    {$IF Defined(CPUX64)}
+    Result := '64-bit (x64)';
+    {$ELSEIF Defined(CPUARM64)}
+    Result := '64-bit (ARM64)';
+    {$ELSEIF Defined(CPUX86)}
+    Result := '32-bit (x86)';
+    {$ELSEIF Defined(CPUARM32)}
+    Result := '32-bit (ARM32)';
+    {$ELSE}
+    Result := 'unknown';
+    {$ENDIF}
+  end;
 begin
   with HelpForm do
    begin
      Position := poDesktopCenter;
      Label2.Caption := 'ReleaseDate: ' + sReleaseDate;
+     Label7.Caption := GetArchLabel;
      HELPFORM_PAGECTRL1.ActivePageIndex := 0;
      Show;
    end;

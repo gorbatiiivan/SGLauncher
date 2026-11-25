@@ -22,7 +22,7 @@ object HelpForm: THelpForm
     Top = 0
     Width = 635
     Height = 441
-    ActivePage = TabSheet2
+    ActivePage = TabSheet1
     Align = alClient
     TabOrder = 0
     TabStop = False
@@ -45,9 +45,9 @@ object HelpForm: THelpForm
         ParentFont = False
       end
       object Label2: TLabel
-        Left = 368
+        Left = 344
         Top = 78
-        Width = 241
+        Width = 265
         Height = 25
         AutoSize = False
         Caption = 'Release date:'
@@ -59,10 +59,10 @@ object HelpForm: THelpForm
         ParentFont = False
       end
       object Label3: TLabel
-        Left = 368
-        Top = 118
-        Width = 241
-        Height = 91
+        Left = 344
+        Top = 144
+        Width = 265
+        Height = 98
         AutoSize = False
         Caption = 
           'STARt Game Launcher is a portable open source application for Wi' +
@@ -77,9 +77,9 @@ object HelpForm: THelpForm
         OnPaint = PaintBox1Paint
       end
       object Label5: TLabel
-        Left = 368
+        Left = 344
         Top = 325
-        Width = 241
+        Width = 265
         Height = 13
         Cursor = crHandPoint
         Hint = 'https://sglauncher.sourceforge.io/'
@@ -94,9 +94,9 @@ object HelpForm: THelpForm
         OnClick = Label5Click
       end
       object Label6: TLabel
-        Left = 368
+        Left = 344
         Top = 248
-        Width = 241
+        Width = 265
         Height = 49
         AutoSize = False
         Caption = 
@@ -106,9 +106,9 @@ object HelpForm: THelpForm
         WordWrap = True
       end
       object Label4: TLabel
-        Left = 368
+        Left = 344
         Top = 306
-        Width = 185
+        Width = 209
         Height = 13
         Cursor = crHandPoint
         Hint = 'https://github.com/gorbatiiivan/SGLauncher'
@@ -121,6 +121,20 @@ object HelpForm: THelpForm
         Font.Style = [fsUnderline]
         ParentFont = False
         OnClick = Label5Click
+      end
+      object Label7: TLabel
+        Left = 344
+        Top = 109
+        Width = 265
+        Height = 25
+        AutoSize = False
+        Caption = 'Architecture:'
+        Font.Charset = DEFAULT_CHARSET
+        Font.Color = clWindowText
+        Font.Height = -16
+        Font.Name = 'Segoe UI'
+        Font.Style = []
+        ParentFont = False
       end
     end
     object TabSheet4: TTabSheet

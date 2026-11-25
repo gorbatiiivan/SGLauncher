@@ -8,6 +8,7 @@ uses
   WinApi.Windows,
   Winapi.Messages,
   Vcl.Forms,
+  System.SysUtils,
   Vcl.Themes,
   Vcl.Styles,
   Unit1 in 'Unit1.pas' {SGLMainForm},
@@ -19,7 +20,8 @@ uses
   SystemUtils in 'SystemUtils.pas',
   ToolBars in 'ToolBars.pas',
   Aria2Thread in 'Aria2Thread.pas' {$R *.res},
-  XMLLiteCore in 'XMLLiteCore.pas';
+  XMLLiteCore in 'XMLLiteCore.pas',
+  AutoUpdater in 'AutoUpdater.pas';
 
 {$R *.res}
 {$SETPEFLAGS IMAGE_FILE_RELOCS_STRIPPED} //Удаление из exe таблицы релокаций.
@@ -30,11 +32,20 @@ var
   hMutex: THandle;
   hWnd: WinApi.Windows.HWND;
   cds: TCopyDataStruct;
+  AlreadyRunning: Boolean;
+  WaitRes: DWORD;
 begin
   //Запрещаем открытие больше одного экземпляра
   hMutex := CreateMutex(nil, True, MUTEX_NAME);
+  AlreadyRunning := (hMutex = 0) or (GetLastError = ERROR_ALREADY_EXISTS);
 
-  if (hMutex = 0) or (GetLastError = ERROR_ALREADY_EXISTS) then
+  if AlreadyRunning and (hMutex <> 0) and FindCmdLineSwitch('wait') then
+  begin
+    WaitRes := WaitForSingleObject(hMutex, 30000);
+    AlreadyRunning := (WaitRes <> WAIT_OBJECT_0) and (WaitRes <> WAIT_ABANDONED);
+  end;
+
+  if AlreadyRunning then
   begin
     // Ищем окно по имени VCL класса формы
     hWnd := FindWindow('TSGLMainForm', nil);

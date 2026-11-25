@@ -41,22 +41,22 @@ object SGLMainForm: TSGLMainForm
   OnResize = FormResize
   TextHeight = 15
   object Splitter1: TSplitter
-    Left = 522
-    Top = 106
-    Width = 7
-    Height = 644
+    AlignWithMargins = True
+    Left = 524
+    Top = 109
+    Height = 635
+    Margins.Bottom = 6
+    Beveled = True
     OnAfterResize = FormResize
-    ExplicitLeft = 313
-    ExplicitTop = 6
-    ExplicitHeight = 691
+    ExplicitLeft = 518
+    ExplicitTop = 106
+    ExplicitHeight = 644
   end
   object Splitter4: TSplitter
     Left = 200
     Top = 106
-    Width = 7
+    Width = 6
     Height = 644
-    ExplicitTop = 111
-    ExplicitHeight = 639
   end
   object TabView1: TTabView
     AlignWithMargins = True
@@ -75,9 +75,9 @@ object SGLMainForm: TSGLMainForm
   end
   object Panel1: TPanel
     AlignWithMargins = True
-    Left = 532
+    Left = 533
     Top = 109
-    Width = 399
+    Width = 398
     Height = 638
     Align = alClient
     BevelOuter = bvNone
@@ -85,19 +85,19 @@ object SGLMainForm: TSGLMainForm
     object Splitter2: TSplitter
       Left = 0
       Top = 409
-      Width = 399
-      Height = 7
+      Width = 398
+      Height = 3
       Cursor = crVSplit
       Align = alTop
+      Beveled = True
       OnAfterResize = FormResize
-      ExplicitTop = 421
-      ExplicitWidth = 631
+      ExplicitWidth = 407
     end
     object Panel2: TPanel
       Left = 0
-      Top = 416
-      Width = 399
-      Height = 222
+      Top = 412
+      Width = 398
+      Height = 226
       Align = alClient
       BevelOuter = bvNone
       TabOrder = 0
@@ -105,8 +105,8 @@ object SGLMainForm: TSGLMainForm
         AlignWithMargins = True
         Left = 97
         Top = 3
-        Width = 205
-        Height = 93
+        Width = 204
+        Height = 101
         Margins.Left = 55
         Margins.Right = 55
         Align = alClient
@@ -120,10 +120,10 @@ object SGLMainForm: TSGLMainForm
         ExplicitHeight = 134
       end
       object NextImgBtn: TSpeedButton
-        Left = 357
+        Left = 356
         Top = 0
         Width = 42
-        Height = 99
+        Height = 107
         Align = alRight
         Caption = '>'
         Enabled = False
@@ -142,7 +142,7 @@ object SGLMainForm: TSGLMainForm
         Left = 0
         Top = 0
         Width = 42
-        Height = 99
+        Height = 107
         Align = alLeft
         Caption = '<'
         Enabled = False
@@ -158,20 +158,21 @@ object SGLMainForm: TSGLMainForm
       end
       object Splitter3: TSplitter
         Left = 0
-        Top = 99
-        Width = 399
-        Height = 7
+        Top = 107
+        Width = 398
+        Height = 3
         Cursor = crVSplit
         Align = alBottom
+        Beveled = True
         OnMoved = Splitter3Moved
-        ExplicitTop = 144
-        ExplicitWidth = 631
+        ExplicitTop = 103
+        ExplicitWidth = 407
       end
       object ScrollBox2: TScrollBox
         AlignWithMargins = True
         Left = 55
-        Top = 109
-        Width = 289
+        Top = 113
+        Width = 288
         Height = 110
         Margins.Left = 55
         Margins.Right = 55
@@ -196,7 +197,7 @@ object SGLMainForm: TSGLMainForm
     object ScrollBox1: TScrollBox
       Left = 0
       Top = 0
-      Width = 399
+      Width = 398
       Height = 409
       Margins.Left = 6
       Margins.Top = 6
@@ -216,7 +217,7 @@ object SGLMainForm: TSGLMainForm
         AlignWithMargins = True
         Left = 14
         Top = 206
-        Width = 379
+        Width = 378
         Height = 42
         Margins.Left = 14
         Margins.Top = 6
@@ -233,11 +234,12 @@ object SGLMainForm: TSGLMainForm
         ShowAccelChar = False
         WordWrap = True
         ExplicitTop = 209
+        ExplicitWidth = 379
       end
       object InfoPanel: TPanel
         Left = 0
         Top = 0
-        Width = 399
+        Width = 398
         Height = 200
         Align = alTop
         BevelOuter = bvNone
@@ -246,7 +248,7 @@ object SGLMainForm: TSGLMainForm
           AlignWithMargins = True
           Left = 14
           Top = 3
-          Width = 382
+          Width = 381
           Height = 32
           Margins.Left = 14
           Align = alTop
@@ -263,7 +265,7 @@ object SGLMainForm: TSGLMainForm
           AlignWithMargins = True
           Left = 14
           Top = 41
-          Width = 382
+          Width = 381
           Height = 15
           Cursor = crHandPoint
           Margins.Left = 14
@@ -278,7 +280,7 @@ object SGLMainForm: TSGLMainForm
           AlignWithMargins = True
           Left = 14
           Top = 62
-          Width = 382
+          Width = 381
           Height = 15
           Cursor = crHandPoint
           Margins.Left = 14
@@ -293,7 +295,7 @@ object SGLMainForm: TSGLMainForm
           AlignWithMargins = True
           Left = 14
           Top = 83
-          Width = 382
+          Width = 381
           Height = 15
           Cursor = crHandPoint
           Margins.Left = 14
@@ -308,7 +310,7 @@ object SGLMainForm: TSGLMainForm
           AlignWithMargins = True
           Left = 14
           Top = 104
-          Width = 382
+          Width = 381
           Height = 15
           Cursor = crHandPoint
           Margins.Left = 14
@@ -323,7 +325,7 @@ object SGLMainForm: TSGLMainForm
           AlignWithMargins = True
           Left = 14
           Top = 125
-          Width = 382
+          Width = 381
           Height = 15
           Cursor = crHandPoint
           Margins.Left = 14
@@ -338,7 +340,7 @@ object SGLMainForm: TSGLMainForm
           AlignWithMargins = True
           Left = 14
           Top = 146
-          Width = 382
+          Width = 381
           Height = 15
           Cursor = crHandPoint
           Margins.Left = 14
@@ -353,7 +355,7 @@ object SGLMainForm: TSGLMainForm
           AlignWithMargins = True
           Left = 14
           Top = 167
-          Width = 382
+          Width = 381
           Height = 15
           Cursor = crHandPoint
           Margins.Left = 14
@@ -368,7 +370,7 @@ object SGLMainForm: TSGLMainForm
   end
   object Panel3: TPanel
     AlignWithMargins = True
-    Left = 210
+    Left = 209
     Top = 109
     Width = 309
     Height = 638
@@ -390,7 +392,6 @@ object SGLMainForm: TSGLMainForm
       Width = 303
       Height = 598
       Align = alClient
-      BorderStyle = bsNone
       Columns = <
         item
           Width = 514

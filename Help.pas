@@ -22,6 +22,7 @@ type
     TabSheet2: TTabSheet;
     Memo2: TMemo;
     Label4: TLabel;
+    Label7: TLabel;
     procedure PaintBox1Paint(Sender: TObject);
     procedure Label5Click(Sender: TObject);
     procedure FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);

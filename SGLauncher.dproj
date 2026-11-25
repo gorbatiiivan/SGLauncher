@@ -187,6 +187,7 @@
             <Form>$R *.res</Form>
         </DCCReference>
         <DCCReference Include="XMLLiteCore.pas"/>
+        <DCCReference Include="AutoUpdater.pas"/>
         <RcItem Include="Icon2.ico">
             <ResourceType>ICON</ResourceType>
             <ResourceId>OnLoadIcon</ResourceId>
